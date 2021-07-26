@@ -78,11 +78,11 @@ table(yellowfin$produce)
 # 14 NON YELLOWFIN-1
 
     # COMMENT FOR NON YELLOWFIN-1 DATA
-    #Fatmeter fucked with wrong Produce and/or wrong date and/or wrong value 
+    #Fatmeter error with wrong Produce and/or wrong date and/or wrong value 
     #downloaded despite the fact that Produce, date and value were correct when 
     #conducting the measurement; keep value recorded by hand
     
-    #Fatmeter fucked with wrong Produce and/or wrong date and/or wrong value 
+    #Fatmeter error with wrong Produce and/or wrong date and/or wrong value 
     #downloaded despite the fact that Produce, date and value were correct when 
     #conducting the measurement; in this session, but this value is OK according 
     #to the value recorded by hand
