@@ -11,12 +11,12 @@
 # Area: WCPFC Convention Area
 # Fishing gears: PS (associated), PS (unassociated), LL, PL, Other
 # Time series: annual, 2000-2020
-# Spatial resolution: COG and inertia 5° x 5°; Area occupied 1° x 1° (PS), 5° x 5° (LL)
+# Spatial resolution: COG and inertia 5Â° x 5Â°; Area occupied 1Â° x 1Â° (PS), 5Â° x 5Â° (LL)
 
 # The following three indicators were considered:
 # 1) Annual longitudinal centre of catch          This is the annual mean zonal centre of gravity of catch for each of SKJ, YFT, BET, ALB between 2000 and 2020, for each gear type. 
 # 2) Annual latitudinal centre of catch           This is the annual mean meridional centre of gravity of catch for each of SKJ, YFT, BET, ALB, between 2000 and 2020, for each gear type.
-# 3) Annual area of catch ('Area occupied')       This is the annual number of 1° x 1° grid cells (PS), 5° x 5° grid cells (LL) and area (in km^2) in which each of SKJ, YFT, BET, ALB were captured in the WCPFC-CA between 2000 and 2020, for each gear type. 
+# 3) Annual area of catch ('Area occupied')       This is the annual number of 1Â° x 1Â° grid cells (PS), 5Â° x 5Â° grid cells (LL) and area (in km^2) in which each of SKJ, YFT, BET, ALB were captured in the WCPFC-CA between 2000 and 2020, for each gear type. 
 
 # Load packages
 library(tidyverse)
@@ -55,7 +55,7 @@ gg.theme <- theme_bw() +
 catch_dat<-read.csv("agg.data.jed.csv")
 
 # Format geographic coordinates  
-# Use SW corner of 5° x 5° grid cells as catch location (mirroring fishery effort indicators)
+# Use SW corner of 5Â° x 5Â° grid cells as catch location (mirroring fishery effort indicators)
 catch_dat %<>% mutate(lat = as.numeric(substr(lat_short,1,2)), lat.dir = substr(lat_short,3,3), 
                       lon = as.numeric(substr(lon_short,1,3)), lon.dir = substr(lon_short,4,4), 
                       lat = ifelse(lat.dir=='S', lat*-1,lat), lon = ifelse(lon.dir=='W', 360-lon, lon)) %>% 
@@ -300,7 +300,7 @@ write.csv(OTH.cg, "OTH.cg.csv", row.names = F)
 ### --- Area occupied (AO)
 
 # Calculate for PS (all sets types combined) and LL.
-# Use 1° x 1° data from PS ('s_best') and 5° x 5° data from LL (l_best).
+# Use 1Â° x 1Â° data from PS ('s_best') and 5Â° x 5Â° data from LL (l_best).
 
 # Extract and organise data 
 db1 <- "driver=SQL Server;server=nouSQL03;database=LOG_MASTER"
@@ -326,7 +326,7 @@ l_catch <- sqlQuery(channel, l_catch_query, as.is=TRUE)
 odbcCloseAll()
 
 # Format geographic coordinates  
-# Use SW corner of grid cells (1° x 1° for PS, 5° x 5° for LL) as catch location (mirroring fishery effort indicators)
+# Use SW corner of grid cells (1Â° x 1Â° for PS, 5Â° x 5Â° for LL) as catch location (mirroring fishery effort indicators)
 s_catch %<>% mutate(lat = as.numeric(substr(lat_short,1,2)), lat.dir = substr(lat_short,3,3), 
                     lon = as.numeric(substr(lon_short,1,3)), lon.dir = substr(lon_short,4,4),
                     lat = ifelse(lat.dir=='S', lat*-1,lat), lon = ifelse(lon.dir=='W', 360-lon, lon)) %>% 
@@ -377,10 +377,10 @@ area.occ = function(dat, catch, res){
 }
 
 # Calculate by gear type
-PS_all.ao = area.occ(s_catch, catch='sp_mt', res=1) # 1° x 1° resolution
-PS_ass.ao = area.occ(s_catch_ass, catch='sp_mt', res=1) # 1° x 1° resolution
-PS_una.ao = area.occ(s_catch_una, catch='sp_mt', res=1) # 1° x 1° resolution
-LL.ao = area.occ(l_catch, catch='sp_mt', res=5) # 5° x 5° resolution
+PS_all.ao = area.occ(s_catch, catch='sp_mt', res=1) # 1Â° x 1Â° resolution
+PS_ass.ao = area.occ(s_catch_ass, catch='sp_mt', res=1) # 1Â° x 1Â° resolution
+PS_una.ao = area.occ(s_catch_una, catch='sp_mt', res=1) # 1Â° x 1Â° resolution
+LL.ao = area.occ(l_catch, catch='sp_mt', res=5) # 5Â° x 5Â° resolution
 
 # Plot by gear type
 pdf("Area occupied.pdf")
