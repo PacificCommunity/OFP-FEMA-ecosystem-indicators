@@ -11,7 +11,7 @@
 # 1) Changed from RMarkdown to standard R script.
 # 2) Addition of new data from 1990 to 2020 inclusive.
 # 3) Addition of a new indicator capturing the temporal trend in the proportion of purse seine effort 
-#    inside high seas pockets (HSPs) between 1990 and 2020.      
+#    inside high seas areas (HS) between 1990 and 2020.      
 
 
 library(tidyverse)
