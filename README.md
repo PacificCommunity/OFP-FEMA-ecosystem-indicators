@@ -2,7 +2,7 @@
 Repository for SPC's Ecosystem and Climate Indicators work. 
 First established to support development of the Ecosystem and Climate 'Report Cards' presented in the following Information Paper to SC17 in 2021:
       Oceanic Fisheries Programme (2021). Ecosystem and Climate indicators for the WCPO. 17th Regular Session of the Scientific
-      Committee of the WCPFC, WCPFC-SC17-2021/ EB-IP-09
+      Committee of the WCPFC, WCPFC-SC17-2021/ EB-IP-09.
 Sub-folders are added each year, comprising code updates and new analyses for indicator refinement and development.
 
 ## Details and methodologies
