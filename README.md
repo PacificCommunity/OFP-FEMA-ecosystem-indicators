@@ -6,5 +6,5 @@ First established to support development of the Ecosystem and Climate 'Report Ca
 Sub-folders are added each year, comprising code updates and new analyses for indicator refinement and development.
 
 ## Details and methodologies
-The Ecosystem and Climate Report Cards are intended as a succinct refernce on important indicators from the region related to the ecosystem, climate, and fishery dynamics. For interested readers, we have provided detailed documents in this repository to esnure the methods and calculations are clear and transparent. If you have any questions, suggestions, or comments, please do not hesitate to contact us.
+The Ecosystem and Climate Report Cards are intended as a succinct reference on important indicators from the region related to the ecosystem, climate, and fishery dynamics. For interested readers, we have provided detailed documents in this repository to esnure the methods and calculations are clear and transparent. If you have any questions, suggestions, or comments, please do not hesitate to contact us.
 
