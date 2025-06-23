@@ -1,0 +1,596 @@
+% Options for packages loaded elsewhere
+\PassOptionsToPackage{unicode}{hyperref}
+\PassOptionsToPackage{hyphens}{url}
+%
+\documentclass[
+]{article}
+\usepackage{amsmath,amssymb}
+\usepackage{iftex}
+\ifPDFTeX
+  \usepackage[T1]{fontenc}
+  \usepackage[utf8]{inputenc}
+  \usepackage{textcomp} % provide euro and other symbols
+\else % if luatex or xetex
+  \usepackage{unicode-math} % this also loads fontspec
+  \defaultfontfeatures{Scale=MatchLowercase}
+  \defaultfontfeatures[\rmfamily]{Ligatures=TeX,Scale=1}
+\fi
+\usepackage{lmodern}
+\ifPDFTeX\else
+  % xetex/luatex font selection
+\fi
+% Use upquote if available, for straight quotes in verbatim environments
+\IfFileExists{upquote.sty}{\usepackage{upquote}}{}
+\IfFileExists{microtype.sty}{% use microtype if available
+  \usepackage[]{microtype}
+  \UseMicrotypeSet[protrusion]{basicmath} % disable protrusion for tt fonts
+}{}
+\makeatletter
+\@ifundefined{KOMAClassName}{% if non-KOMA class
+  \IfFileExists{parskip.sty}{%
+    \usepackage{parskip}
+  }{% else
+    \setlength{\parindent}{0pt}
+    \setlength{\parskip}{6pt plus 2pt minus 1pt}}
+}{% if KOMA class
+  \KOMAoptions{parskip=half}}
+\makeatother
+\usepackage{xcolor}
+\usepackage[margin=1in]{geometry}
+\usepackage{graphicx}
+\makeatletter
+\def\maxwidth{\ifdim\Gin@nat@width>\linewidth\linewidth\else\Gin@nat@width\fi}
+\def\maxheight{\ifdim\Gin@nat@height>\textheight\textheight\else\Gin@nat@height\fi}
+\makeatother
+% Scale images if necessary, so that they will not overflow the page
+% margins by default, and it is still possible to overwrite the defaults
+% using explicit options in \includegraphics[width, height, ...]{}
+\setkeys{Gin}{width=\maxwidth,height=\maxheight,keepaspectratio}
+% Set default figure placement to htbp
+\makeatletter
+\def\fps@figure{htbp}
+\makeatother
+\setlength{\emergencystretch}{3em} % prevent overfull lines
+\providecommand{\tightlist}{%
+  \setlength{\itemsep}{0pt}\setlength{\parskip}{0pt}}
+\setcounter{secnumdepth}{-\maxdimen} % remove section numbering
+\ifLuaTeX
+  \usepackage{selnolig}  % disable illegal ligatures
+\fi
+\IfFileExists{bookmark.sty}{\usepackage{bookmark}}{\usepackage{hyperref}}
+\IfFileExists{xurl.sty}{\usepackage{xurl}}{} % add URL line breaks if available
+\urlstyle{same}
+\hypersetup{
+  pdftitle={Potential fisheries related climate indicators for WCPFC `State of the Ocean' report},
+  pdfauthor={nick hill},
+  hidelinks,
+  pdfcreator={LaTeX via pandoc}}
+
+\title{Potential fisheries related climate indicators for WCPFC `State
+of the Ocean' report}
+\author{nick hill}
+\date{2025-01-22}
+
+\begin{document}
+\maketitle
+
+{
+\setcounter{tocdepth}{2}
+\tableofcontents
+}
+\clearpage
+
+\hypertarget{introduction}{%
+\section{1. Introduction}\label{introduction}}
+
+The intent of this script is to provide some rough text and plots of
+potential fisheries-related climate indicators to the group to stimulate
+discussion. Its unlikely all of these will make the final report and are
+here to provide options, discussion and an idea of the data available.
+Please excuse any errors/imperfect plots etc. I'm hoping I've provided
+enough text to explain what's been done but please ask if its not clear
+(which is almost definitely the case).
+
+We look at three main types of indicators which reflect both relevance
+to climate change fisheries, and also the data we have available:
+
+\begin{itemize}
+\item
+  Catch
+\item
+  Effort
+\item
+  Biology (length and weight-based)
+\end{itemize}
+
+One thing I have not yet explored is CPUE-related indicators. It'd be
+good to get some feedback from others if we think this is worthwhile. It
+is quite simple/achievable to explore some nominal-CPUE based
+indicators, but I am unsure if this is relevant given the work done in
+developing standardised CPUE indices. is there anything else we could
+leverage from the stock assessments like recruitment indices?
+
+\hypertarget{catch-related-indicators}{%
+\section{2. Catch-related indicators}\label{catch-related-indicators}}
+
+Here, we have extracted aggregated catch data for purse seine and
+longline fisheries in the WCPFC from 1990-2023 for target species:
+
+\begin{itemize}
+\item
+  ALB - albacore (north and south),
+\item
+  BET - Bigeye tuna,
+\item
+  SKJ - skipjack tuna (purse seine only),
+\item
+  YFT - yellowfin tuna.
+\end{itemize}
+
+We investigate a series of indicators or approaches to investigate
+climate-related trends in catch and how we might monitor the fishery
+using this data. This includes:
+
+\begin{itemize}
+\item
+  Centre of gravity of PS catch,
+\item
+  Total area of PS catch,
+\item
+  Proportion of PS catch \textgreater{} 180 degrees longitude,
+\item
+  Proportion of LL catch beyond 20 degrees latitude.
+\end{itemize}
+
+\clearpage
+
+\hypertarget{centre-of-gravity-of-ps-catch}{%
+\subsection{2.1 Centre of gravity of PS
+catch}\label{centre-of-gravity-of-ps-catch}}
+
+Centre of gravity refers to the `centre' of fishing catch in terms of
+both longitude and latitude. With the effects of climate change,
+SEAPODYM has predicted that tuna biomass will shift eastwards with the
+expansion of the warm pool. By monitoring the centre of gravity of
+catch, we can track if this shift in biomass is occurring (assuming that
+the fishery will follow the biomass). Catch and effort regularly shift
+with ENSO events, so the hypothesis would be the PS fleet could shift in
+relation to any climate-change driven changes.
+
+Here, we extract the centre of gravity of catch which basically provides
+a ``mean'' estimate of catch location (longitude and latitude) and an
+intertia value which measures disperson (basically spread). We have
+extracted these at annual timescales, but could be downgraded to
+seasonal or monthly to explore within-year shifts also. Note: PS catch
+data is filtered to WCPFC regions 6-8 (lat: -20:10 degrees, lon 140:210
+degrees) to capture main PS fleet and filter out SE Asian domestic
+effort (to be discussed).
+
+First, we show a plot of catch density as a way of a summary of catch
+spatially. We have done this for each species and both gears. As an
+example, we have shown this for each species with historical data
+(1990:2000) and the most recent year (2023) for each species as well as
+effort. Note the distribution of longline catch in the density maps -
+should we keep in SE Asian catch? This is dropped in some other
+analyses.
+
+Now we can explore COG for species. Here, we can see evidence of an
+eastward shift in PS catch for bigeye tuna in particular, while for SKJ
+and YFT it is less clear. It is also not clear if this is driven by
+climate shifts, or a shift in effort, particularly sets associated with
+FADs to the east that may be explaining this (to be discussed).
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/combined/combined_PScatch_effort_density_map.png}
+\caption{Density of purse seine catch and effort for historical period
+(1990:2000) and 2023.}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/catch/catch_density_LL_allsp.png}
+\caption{Density of longline catch for historical period (1990:2000) and
+2023.}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/catch/catch_COGPS_map.png}
+\caption{Centre of gravity of purse seine catch by species from
+1990-2023.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{total-area-of-ps-and-longline-catch}{%
+\subsection{Total area of PS and longline
+catch}\label{total-area-of-ps-and-longline-catch}}
+
+This indicator looks at the total area (km2) where species were
+harvested. Climate change is likely to drive distribution shifts in
+species as their environment changes with many species shifting
+polewards as temperatures warm for example. Other species ranges can
+change in size as their range edges can shift at different rates,
+meaning that suitable habitat is increasing/decreasing at one edge
+faster than the other for instance, or their distribution can become
+more fragmented.
+
+It is unknown how tuna species distribution is likely to change with
+climate change in terms of total size, but it is predicted to shift
+eastwards with the extension of the warm pool. Monitoring total catch
+area could provide a monitor/early warning system that changes in the
+distribution and abundance of tuna are occurring due to climate change.
+Here, we can see the total catch area for each species by gear type. We
+can see no clear recent changes in total area after an initial increase
+in the 1990s which is likely a reflection of changes in fleet dynamics.
+
+\textbf{I think that monitoring the distribution of catch of species
+could be useful in this report, however I feel total area may be an
+insensitive indicator in this regard. Maybe we can ID a more
+appropriate/sensitive indicator? Maybe this is covered by the COG or
+inertia indicator? I have explored other potential options here in the
+proportion of PS catch \textgreater{} 180 degrees and proportion of LL
+catch outside 20 degrees}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/catch/catch_area_PS.png}
+\caption{Total area of purse seine catch by species and year. Black line
+= 1990:2000 mean.}
+\end{figure}
+
+\clearpage
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/catch/catch_area_LL.png}
+\caption{Total area of longline catch by species and year.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{proportion-of-ps-catch-180-degrees-longitude}{%
+\subsection{Proportion of PS catch \textgreater{} 180 degrees
+longitude}\label{proportion-of-ps-catch-180-degrees-longitude}}
+
+This is another indicator looking at monitoring the predicted shifts in
+tuna biomass eastwards with climate change and expansion of the warm
+pool. In previous SPC reports, this indicator has looked at the
+proportion of catch/sets in the high seas which is a similar indicator
+and relevant to members as they derive income from fishing within their
+EEZs. However, I have switched to a longitudinal cutoff instead as it is
+simpler and should be more reflective of a climate change shift as the
+high seas occur in various regions (not all eastern) in the WCPFC. Not
+sure if 180 degrees is the best boundary to use?
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/catch/catch_180prop_PS.png}
+\caption{Proportion of catch of tuna species beyond 180 degrees
+longitude. Data is normalised by dividing each index by the historical
+mean (1990:2000).}
+\end{figure}
+
+\clearpage
+
+\hypertarget{proportion-of-ll-catch-beyond-20-degrees-latitude}{%
+\subsection{Proportion of LL catch beyond 20 degrees
+latitude}\label{proportion-of-ll-catch-beyond-20-degrees-latitude}}
+
+The intent of this indicator is to identify poleward shifts in species
+and the poleward shift of effort and catch in response. There are many
+documented cases of species shifting polewards with warming waters as a
+response to climate change, such as various pelagic species along
+Australia's east coast as an example. This is more relevant for longline
+fisheries than the purse seine fleet, and could track poleward shifts in
+more temperate species like albacore. Could also look to explore an
+indicator species like a mako shark? porbeagle? striped marlin? etc.
+
+However, I am not sure that a) this indicator is sensitive, and b) that
+the fleet will follow species this way and that other dynamics may be
+more influential. We can see in the plot it seems like their is a
+`tropicalisaiton' of catch, which is likely reflecting a change in fleet
+dynamics or targeting rather than reflecting species distributions.
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/catch/catch_20prop_LL.png}
+\caption{Proportion of longline catch by species harvested outside -20
+to 20 degrees latitude by year.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{effort-indicators}{%
+\section{Effort indicators}\label{effort-indicators}}
+
+Here, we have extracted aggregated effort data for purse seine (by set
+type) and longline fisheries in the WCPFC from 1990-2023. We investigate
+a series of potential indicators in effort that are similar to those for
+catch and how we might monitor the fishery using this data. This
+includes:
+
+\begin{itemize}
+\item
+  Centre of gravity of PS effort,
+\item
+  Total area of PS and longline effort,
+\item
+  Proportion of PS effort \textgreater{} 180 degrees longitude.
+\end{itemize}
+
+\hypertarget{centre-of-gravity-cog-of-purse-seine-effort}{%
+\subsection{Centre of gravity (COG) of purse seine
+effort}\label{centre-of-gravity-cog-of-purse-seine-effort}}
+
+Centre of gravity refers to the `centre' of fishing effort in terms of
+both longitude and latitude. With the effects of climate change, is is
+predicted that tuna biomass will shift eastwards with the expansion of
+the warm pool. By monitoring the centre of gravity of effort, we can
+track if this shift in biomass is occurring (assuming the fleet will
+follow the biomass). It is also well known that effort and catch shifts
+in relation to ENSO events, so it could shift with other
+environmental-related shifts like climate change.
+
+Here, we extract the centre of gravity of effort which basically
+provides a ``mean'' estimate of effort (longitude and latitude) and an
+intertia value which measures disperson (basically spread). We have
+extracted these at annual timescales, but could be downgraded to
+seasonal or monthly to explore within-year shifts also. Note: data is
+filtered to WCPFC regions 6-8 (lat: -20:10 degrees, lon 140:210 degrees)
+to capture main PS fleet and filter out SE Asian domestic effort (right
+approach? to be discussed).
+
+First, we show a plot of effort density as a way of a summary of effort
+spatially comparing purse seine effort from a historical period
+(1990:2000) and recent years. Then, we look at COG by set type and can
+see that the PS fleet shifts east and west which is known to occur with
+ENSO events, and that there is a clear eastward shift in associated sets
+while unassociated sets seem more variable.
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/effort/effort_density_PSall_region68.png}
+\caption{Density map of purse seine effort in historical and recent
+years.}
+\end{figure}
+
+\clearpage
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/effort/effort_COGPS_map_region68_set_type.png}
+\caption{Centre of gravity of purse seine effort by set type from
+1990-2023.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{total-area-of-effort}{%
+\subsection{Total area of effort}\label{total-area-of-effort}}
+
+This indicator monitors the total area of purse seine and longline
+effort by year. Area that a fleet fishes often changes over time in
+response to changing fishing dynamics, stock abundance, fishing pressure
+etc. It is not certain how climate change will influence species in this
+regard, but this is one way we could look to monitor any shifts. Similar
+to the total area catch indicator, we can see an increase in early years
+followed by relative stability in total area for PS effort since
+\textasciitilde2000. As discussed above in the catch indicator, I think
+a `footprint' type indicator could be useful to monitor however open to
+suggestions of more sensitive indicators. Is inertia a good alternative?
+For longline, we can see an even more stable (uninformative) trend over
+time. It should be noted that longline effort has a low resolution (5x5
+degrees) and so this indicator is likely to be truly informative.
+Alternative? I have added a plot of PS effort inertia for discussion.
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/effort/effort_area_PS.png}
+\caption{Total area of purse seine effort by set type from 1990-2023.}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/effort/effort_area_LL.png}
+\caption{Total area of longline effort by set type from 1990-2023.}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/effort/effort_COGinert_PSs_region68.png}
+\caption{Inertia (spread) of purse seine effort by set type from
+1990-2023.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{proportion-of-purse-seine-sets-180-degrees}{%
+\subsection{Proportion of purse seine sets \textgreater{} 180
+degrees}\label{proportion-of-purse-seine-sets-180-degrees}}
+
+As above with catch, we look at the proportion of PS sets occurring east
+of the 180 degree longitude. It has been predicted that an eastward
+shift in tuna biomass will occur with climate change and this indicator
+could identify this shift. There are a range of factors that drive fleet
+dynamics and this indicator could help track if this shift in
+biomass/distribution is occurring, and if the fleet is shifting with it.
+This indicator also seems to fluctuate potentially in line with ENSO
+events. As above, is 180 degrees the best longitude? Is this preferable
+to proportion of shots in the high seas?
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/effort/effort_180prop_PS_region68.png}
+\caption{Change in the proportion of sets beyond 180 degrees longitude
+by set type relative to their historical (1990:2000) mean from
+1990-2023.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{biological-indicators}{%
+\section{Biological indicators}\label{biological-indicators}}
+
+Climate change is expected to modify species life history and biology in
+a range of ways from maximum size to size at maturity etc. by monitoring
+biological indicators, we may be able to identify changes in tuna
+population related to climate change. Here, we have extracted biological
+information from a range of SPC data sources (eg: observer, port
+sampling etc) to be used to inform various biological (length,
+length/weight) indicators. Data has been sourced from longline gear only
+as this provides a broader spread of biological information (small-large
+fish) compared to PS. The primary biological data collected by fisheries
+dependent sampling by SPC and WCPFC is length-based while other
+information like weight, age, maturity etc is less frequently collected.
+For this reason, the focus of these indicators are largely length-based.
+
+\begin{itemize}
+\item
+  Mean relative condition factor of tuna species (BET, SKJ, YFT),
+\item
+  Mean length of tuna species (BET, SKJ, YFT),
+\item
+  Proportional length indicators of tuna species (BET, SKJ, YFT).
+\end{itemize}
+
+Species growth and sizes are influenced by a range of factors such as
+prey availability and water temperature, both of which are predicted to
+change with climate change. These indicators would attempt to monitor
+changes in the biology and structure of populations to see if they're
+changing over time. It will be important to consider that changes in
+targeting and fleet dynamics, fishing pressure, sampling design and
+robustness, and the data available will also all affect trends in these
+indicators. Many biological indicators, for example mean length are
+quite insensitive and require large shifts in the abundance/structure of
+a stock to record a change and are more likely to show shifts in fishing
+or sampling rather than the stock. Other indicators that could be worth
+considering monitoring or collecting data for in the future could be
+maturity/fecundity which also may show shifts with climate change and
+may be more sensitive.
+
+\hypertarget{mean-relative-condition-factor-of-tuna-species-bet-skj-yft}{%
+\subsection{Mean relative condition factor of tuna species (BET, SKJ,
+YFT)}\label{mean-relative-condition-factor-of-tuna-species-bet-skj-yft}}
+
+The intent of this indicator is to identify changes in the condition
+(ie: weight relative to length) of tuna species over time. Species
+growth and sizes are influenced by a range of factors such as prey
+availability and water temperature, both of which are predicted to
+change with climate change. This indicator looks at the length-weight
+relationship of species and sees if it is shifting over time. ie: are
+fish getting skinnier/fatter over time?
+
+This indicator comes from existing SPC reports and is a clever use of
+existing data and an interesting way of exploring a change in a
+population. However, I am not sure if we have applied it in the best way
+possible to identify shifts. At the moment, it fits a length-weight
+curve to data for all years and then divides the observed weight by the
+predicted to get a ratio value looking at the deviation of observed vs
+predicted. I think this is a somewhat insensitive way to monitor this
+and could explore alternate designs. Any ideas? Would it not be better
+to fit a curve to the early data, and then do a similar exercise? If all
+data is used to inform the curve it will always center near 1\ldots{} I
+have explored this briefly by fitting a length-weight curve by year, and
+to historical (1990:2000) vs recent years. I also explored extracting
+observed vs predicted weights for fish of various lengths and plotting
+these to see if a 100cm fish has changed in weight over time as an
+example (need to look into this, used predicted weights, not observed).
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/biology/biology_lenwt_indicator.png}
+\caption{Relative condition factor of tunas from 1990:2023 identifying
+changes in the lenght-weight relationship over time.}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/biology/biology_lenwt_hist_recent_indicator.png}
+\caption{Length-weight relationship of tuna species over time with the
+historical period (1990-2000) shaded in grey, and recent years coloured
+lines.}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/biology/biology_lenwt_species_lenquants2.png}
+\caption{Exploring changes in the weight of different lengthed fish over
+time for different tunas.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{mean-length-of-tuna-species}{%
+\subsection{Mean length of tuna
+species}\label{mean-length-of-tuna-species}}
+
+Here we look at length data from longline gear from a range of sampling
+programs (port, sampling etc). Changes in a species length composition
+could reflect changes in stock composition such as a recruitment pulse,
+or broader changes in abundance. Mean length is a simple indicator to
+monitor for stakeholders and there is alot of length data collected in
+the WCPFC so is accessible. But, it is likely to be a relatively
+insensitive indicator to changes in a stock and is more likely to
+reflect changes in targeting or sampling for example. Note, there is a
+slight downward trend in YFT mean length.
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/biology/biology_mnlen_indicator2.png}
+\caption{Mean length of tunas from 1990:2023 from longline gear.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{proportional-length-indicators-of-tuna-species}{%
+\subsection{Proportional length indicators of tuna
+species}\label{proportional-length-indicators-of-tuna-species}}
+
+This indicator looks at the proportion of different-sized fish in the
+catch over time. Changes in the size composition of a population can
+reflect change. For example, when fishing pressure is high often the
+proportion of large individuals in a population can decrease. Monitoring
+small individuals can also help determine if recruitment is changing
+which could be influenced by climate change. This is potentially a more
+sensitive indicator than mean length and better captures if the size
+structure of the population and catch is changing. In this plot we can
+see that the proportion of large yellowfin tuna (\textgreater137cm) in
+the longline catch is decreasing, and the proportion of small
+individuals (\textless105cm) increasing. Is this a change in fishing
+behaviour or a change in the stock?
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/biology/biology_lenprop_indicator2.png}
+\caption{Proportion of different-sized fish in the catch from 1990-2023
+for tuna species. Red = Proportion of catch above the mean size, blue =
+proportion of catch below the small size, green = proportoin of catch
+above the large size.}
+\end{figure}
+
+\clearpage
+
+\hypertarget{length-composition-exploration}{%
+\subsection{Length composition
+exploration}\label{length-composition-exploration}}
+
+Lastly, here are a couple of plots inspired by the SAFE reports from the
+WPRFMC that I think capture well the length composition of the tunas
+over time.
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/biology/biology_lenridges_indicator1.png}
+\caption{Size composition of tunas from 1990-2023 from longline.}
+\end{figure}
+
+\begin{figure}
+\centering
+\includegraphics{./2024_analyses/results/biology/biology_lenridges_indicator3.png}
+\caption{Size composition of tunas in historical years (1990:2000) and
+the most recent year (2023) for longline.}
+\end{figure}
+
+\end{document}
