@@ -1,11 +1,11 @@
-# Estimating long term trends in the longitude of tuna catch/effort
+# Estimating long term trends in the longitude of WCPFC purse seine effort
 # Author: Nick Hill 4/6/25
-# This analysis forms part of the SPC climate indicaotrs report 2025 looking
+# This analysis forms part of the SPC climate and ecosystem indicators report 2025 looking
 # to provide a snapshot of current climate and any underlying climate driven trends in
 # the environment and fishery.
 
 # The intent of this analysis is to determine if there is an underlying longitudinal
-# shift in purse seine catch or effort that reflects the predicted eastward
+# shift in purse seine effort that reflects the eastward
 # shift in tuna biomass predicted under climate change by SEAPODYM (Bell et al. 2021).
 
 # 1. Preamble ----
@@ -15,6 +15,7 @@ library(patchwork)
 library(mgcv)
 library(gratia)
 library(sp)
+library(flextable)
 #library(RODBC)
 #library(sdmTMB)
 
@@ -50,6 +51,31 @@ wcp = Polygon(wcp_ca)
 wcp = SpatialPolygons(list(Polygons(list(wcp), ID = "CA")), 
                       proj4string=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
 coords = wcp@polygons[[1]]@Polygons[[1]]@coords
+
+# Flags of interest 
+flgs <- c('VU', 'US', 'TW', 'JP', 'FM', 'KR', 'KI', 'SB', 'PG', 'PH')
+
+# Get ENSO data
+# Here we extract ENSO data from NOAA website and add to dataset as a variable
+
+# Get ONI data from NOAA website
+# url <- "https://psl.noaa.gov/data/correlation/oni.data"
+# destfile <- "../data/oni.data"
+# download.file(url, destfile, mode = "wb")
+destfile <- paste0(data_wd, 'long_deviance/oni.data.txt')
+
+# Tidy data file
+oni_data <- read.table(destfile, header = FALSE, fill = TRUE)[-1,] |>
+  setNames(c("year", paste0('M',c(1:12)))) |>
+  dplyr::filter(year %in% c(1950:2025)) |>
+  mutate(across(starts_with("M"), as.numeric)) |>
+  pivot_longer(-year, names_to = 'month', values_to = 'oni') |>
+  mutate(month = as.numeric(str_remove(month, "M")),
+         year = as.numeric(year),
+         oniF = as.factor(ifelse(oni >= 0.5, "elnino", 
+                                 ifelse(oni <= -0.5, "lanina", "neutral")))) |>
+  dplyr::filter(oni != -99.9) |>
+  dplyr::rename(yy = year, mm = month)
 
 # 2. Extract catch and effort data from database ----
 
@@ -171,48 +197,48 @@ coords = wcp@polygons[[1]]@Polygons[[1]]@coords
 #   ls.log_trip_id, ls.log_set_id, ls.logdate, vi.flag_id, vi.flag_rg_id, 
 #   lt.fleet_code, lt.vessel_id, ls.school_id, ls.s_activity_id, ls.latd, 
 #   ls.lond, ls.effort_factor",as.is = T)
-
-logps_raw <- sqlQuery(channel, "SELECT
-		pt.log_trip_id,
-		ps.log_set_id,
-		v.vessel_id,
-		vi.flag_id,
-    vi.flag_rg_id,
-    ps.school_id,
-		log.getlatdfromlat(rtrim(ps.lat)) as lat,
-		log.getlond360fromlon(rtrim(ps.lon)) as lon,
-		case when ps.eez_code in ('KI','GL','LN','PX') then 'KI' else ps.eez_code end as ez_id,
-		YEAR(logdate) as yy,  
-		MONTH(logdate) as mm,
-		ps.s_activity_id as s_act_id,
-		ISNULL(cast(sum(case when sp_code = 'YFT' and discard = 0 then coalesce(sp_mt_est,00000.000) else 00000.000 end) as float),0.000) as YFT,
-		ISNULL(cast(sum(case when sp_code = 'BET' and discard = 0 then coalesce(sp_mt_est,00000.000) else 00000.000 end) as float),0.000) as BET,
-		ISNULL(cast(sum(case when sp_code = 'SKJ' and discard = 0 then coalesce(sp_mt_est,00000.000) else 00000.000 end) as float),0.000) as SKJ
-FROM log.trips_ps pt
-		INNER JOIN ref.vessels v ON v.vessel_id = pt.vessel_id 
-		INNER JOIN ref.vessel_instances vi ON vi.vessel_id = v.vessel_id and pt.depart_date between vi.start_date and vi.calculated_end_date
-		INNER join log.sets_ps ps on  pt.log_trip_id = ps.LOG_TRIP_ID
-		INNER join log.catch_ps pc on  ps.LOG_SET_ID = pc.LOG_SET_ID
-WHERE YEAR(logdate) >= 1990
-		and YEAR(logdate) <= 2023
-		and ps.s_activity_id = 1
-GROUP BY 
-		pt.log_trip_id,
-		ps.log_set_id,
-		v.vessel_id,
-		vi.flag_id,
-		log.getlatdfromlat(rtrim(ps.lat)),
-		log.getlond360fromlon(rtrim(ps.lon)),
-		case when ps.eez_code in ('KI','GL','LN','PX') then 'KI' else ps.eez_code end,
-		YEAR(logdate),  
-		MONTH(logdate),
-		ps.s_activity_id,
-        vi.flag_rg_id,
-        ps.school_id", as.is = T)
+# 
+# logps_raw <- sqlQuery(channel, "SELECT
+# 		pt.log_trip_id,
+# 		ps.log_set_id,
+# 		v.vessel_id,
+# 		vi.flag_id,
+#     vi.flag_rg_id,
+#     ps.school_id,
+# 		log.getlatdfromlat(rtrim(ps.lat)) as lat,
+# 		log.getlond360fromlon(rtrim(ps.lon)) as lon,
+# 		case when ps.eez_code in ('KI','GL','LN','PX') then 'KI' else ps.eez_code end as ez_id,
+# 		YEAR(logdate) as yy,  
+# 		MONTH(logdate) as mm,
+# 		ps.s_activity_id as s_act_id,
+# 		ISNULL(cast(sum(case when sp_code = 'YFT' and discard = 0 then coalesce(sp_mt_est,00000.000) else 00000.000 end) as float),0.000) as YFT,
+# 		ISNULL(cast(sum(case when sp_code = 'BET' and discard = 0 then coalesce(sp_mt_est,00000.000) else 00000.000 end) as float),0.000) as BET,
+# 		ISNULL(cast(sum(case when sp_code = 'SKJ' and discard = 0 then coalesce(sp_mt_est,00000.000) else 00000.000 end) as float),0.000) as SKJ
+# FROM log.trips_ps pt
+# 		INNER JOIN ref.vessels v ON v.vessel_id = pt.vessel_id 
+# 		INNER JOIN ref.vessel_instances vi ON vi.vessel_id = v.vessel_id and pt.depart_date between vi.start_date and vi.calculated_end_date
+# 		INNER join log.sets_ps ps on  pt.log_trip_id = ps.LOG_TRIP_ID
+# 		INNER join log.catch_ps pc on  ps.LOG_SET_ID = pc.LOG_SET_ID
+# WHERE YEAR(logdate) >= 1990
+# 		and YEAR(logdate) <= 2023
+# 		and ps.s_activity_id = 1
+# GROUP BY 
+# 		pt.log_trip_id,
+# 		ps.log_set_id,
+# 		v.vessel_id,
+# 		vi.flag_id,
+# 		log.getlatdfromlat(rtrim(ps.lat)),
+# 		log.getlond360fromlon(rtrim(ps.lon)),
+# 		case when ps.eez_code in ('KI','GL','LN','PX') then 'KI' else ps.eez_code end,
+# 		YEAR(logdate),  
+# 		MONTH(logdate),
+# 		ps.s_activity_id,
+#         vi.flag_rg_id,
+#         ps.school_id", as.is = T)
 
 # odbcCloseAll()
 
-save(logps_raw, file = paste0(data_wd, "long_deviance/logbook_ps_raw_data.Rdata"))
+#save(logps_raw, file = paste0(data_wd, "long_deviance/logbook_ps_raw_data.Rdata"))
 
 # 3. Clean and summarise raw PS data ----
 
@@ -223,170 +249,178 @@ save(logps_raw, file = paste0(data_wd, "long_deviance/logbook_ps_raw_data.Rdata"
 load(file = paste0(data_wd, "long_deviance/combined_PS_agg_data_1990-2023_upd.Rdata"))
 head(ps_dat)
 
-# Create set type column and filter out SE Asian effort = EP edge issue
+# tidy sbest data
 sbest_dat <- 
   ps_dat |>
-  mutate(set_type = as.factor(case_when(school %in% c(3,4) ~ 'DFAD',
+  mutate(set_type = as.factor(case_when(school %in% c(3,4) ~ 'DFAD', # bin set type
                           school %in% c(5) ~ 'AFAD',
                           school %in% c(6,7) ~ 'WHALE',
                           school %in% c(1,2,-9) ~ 'FREE')),
-    WCP_CA = point.in.polygon(lond, latd, coords[,1], coords[,2])) |>
-  mutate(across(c(BET, SKJ, YFT), ~ ifelse(is.na(.), 0, .))) |>
-  dplyr::filter(WCP_CA %in% c(1, 2)) |> # & latd >= -20 & latd <= 10 & lond >= 140 & lond <=210
+    WCP_CA = point.in.polygon(lond, latd, coords[,1], coords[,2])) |> # add wcpfc coords
+  mutate(across(c(BET, SKJ, YFT), ~ ifelse(is.na(.), 0, .))) |> # make tuna sp catch colunms
+  dplyr::filter(sets >= 1) |>
+  mutate(sets = round(sets, 0)) |>
+  dplyr::filter(WCP_CA %in% c(1, 2)) |> # remove 0 set columns and sets outside wcpfc
   dplyr::select(-WCP_CA) |>
-  dplyr::filter(!(latd > 10 | latd < -15 | flag %in% c('VN', 'EP') | (flag == 'PH' & fleet == 'PH') |
-                    (flag == 'ID' & fleet == 'ID'))) |>
-  dplyr::filter(!(flag %in% c('FR', 'PA')) & lond >= 130)
+  dplyr::filter(!(latd > 10 | latd < -15) & lond >= 130) #|> # define spatial area
+  #dplyr::filter(flag %in% flgs & !(flag == 'PH' & fleet == 'PH')) |> # drop flags (do this later)
+  #dplyr::filter(!(school %in% c(6,7))) # drop whale sets
 
-# Plot species catch over time
-p <- 
-  sbest_dat |>
-  pivot_longer(-c('S_BEST_ID', 'yy', 'mm', 'flag', 'fleet', 'latd', 'lond', 'school', 
-                  'stdeff', 'sets', 'S_SET_ID', 'set_type'), names_to = 'sp_code', values_to = 'catch_mt') |>
-  group_by(sp_code, yy) |>
-  summarise(catch = sum(catch_mt, na.rm = T)) |>
-  ggplot() +
-  aes(yy, catch/1000, fill = sp_code) +
-  geom_bar(stat = 'identity', position = 'stack') +
-  gg.theme +
-  facet_wrap(~sp_code, scales = 'free_y') +
-  scale_fill_brewer(palette = 'Set1') +
-  labs(x = 'Year', y = 'Catch (x1000t)', fill = 'Species') +
-  theme(aspect.ratio = 1, legend.position = 'bottom')
-p
-ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_catch_by_sp_yr.png'))
+# Group by appropriate variables and join ONI data
+sbest_dat2 <- 
+sbest_dat |>
+  dplyr::filter(flag %in% flgs & !(flag == 'PH' & fleet == 'PH')) |> # drop flags (do this later)
+  dplyr::filter(!(school %in% c(6,7))) |> # drop whale sets
+  left_join(oni_data, by = c('yy', 'mm')) |> # left join ONI data
+  group_by(yy, mm, lond, latd, flag, set_type, oniF) |> # group_by to remove school/set type discrepancies
+  summarise(stdeff = sum(stdeff, na.rm = T),
+            sets = sum(sets, na.rm =T),
+            SKJ = sum(SKJ, na.rm = T)) |> # define flags
+  mutate(cpue = SKJ/stdeff, cpue_log = log(cpue + 1)) |>
+  droplevels()
 
-# Plot effort to see that its correct
+colSums(is.na(sbest_dat2))
+#hist(sbest_dat2$lond)
+#hist(sbest_dat2$cpue)
+#hist(sbest_dat2$cpue_log)
+
+save(sbest_dat2, file = paste0(data_wd, "long_deviance/PS_SBEST1_counted_1990-2023_clean_data2.Rdata"))
+
+# 3.2 SBEST uncounted data ----
+# Finalised data set 
+sbest_dat3 <-
+  sbest_dat2 |>
+  uncount(sets)
+
+nrow(sbest_dat2)
+nrow(sbest_dat3)
+
+# Any NAs left?
+colSums(is.na(sbest_dat3))
+
+# Check data structure
+glimpse(sbest_dat3)
+save(sbest_dat3, file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+
+# 3.3 Plots summarising SBEST and checking for errors ----
+# Note changing of df between sbest_dat and sbest_dat3 to ID flags and set types
+
+# Check set locations
 sbest_dat |>
   #dplyr::filter(yy %in% c(2019:2023)) |>
   group_by(latd, lond) |>
   summarise(stdeff = sum(stdeff, na.rm = T)) |>
   ggplot() +
   aes(lond, latd, fill = stdeff) +
-  geom_tile() +
   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  geom_tile() +
   coord_sf(xlim = c(100, 300), ylim = c(-50, 50)) +
   scale_fill_viridis_c() +
   #facet_wrap(~yy) +
   gg.theme +
   labs(x = 'Longitude', y = 'Latitude', fill = 'Stdeff')
 
-# Explore longitude and sets by flag
-p <- 
+# Check locations by flags - see PH domestic fleet
 sbest_dat |>
-  uncount(round(sets, 0)) |>
+  #dplyr::filter(yy %in% c(2019:2023)) |>
+  group_by(latd, lond, flag) |>
+  summarise(sets = sum(sets, na.rm = T)) |>
   ggplot() +
-  aes(yy, fill = set_type) +
-  geom_bar(position = 'fill') +
-  scale_fill_brewer(palette = 'Set1') +
-  scale_y_continuous(labels = scales::percent_format()) +
-  #facet_wrap(~yy) +
+  aes(lond, latd, fill = sets) +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  geom_tile() +
+  coord_sf(xlim = c(110, 250), ylim = c(-20, 20)) +
+  scale_fill_viridis_c() +
+  facet_wrap(~flag) +
   gg.theme +
-  labs(x = 'Year', y = 'Sets (%)', fill = 'Set type')
-p
-ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_set_type_by_yr.png')
+  labs(x = 'Longitude', y = 'Latitude', fill = 'Stdeff')
 
+# Check flags
+summ_stats <- sbest_dat %>%
+  mutate(flag2 = as.factor(ifelse(flag %in% c(flgs), paste0(flag,'*'), paste0(flag)))) |>
+  group_by(yy, flag2) %>%
+  summarise(mean_lond = mean(lond, na.rm = TRUE),
+            q25 = quantile(lond, 0.25, na.rm = TRUE),
+            q75 = quantile(lond, 0.75, na.rm = TRUE))
 p <- 
   sbest_dat |>
-  uncount(round(sets, 0)) |>
+  mutate(flag2 = as.factor(ifelse(flag %in% c(flgs), paste0(flag,'*'), paste0(flag)))) |>
   ggplot() +
-  aes(yy, fill = set_type) +
+  geom_violin(aes(x=as.numeric(as.character(yy)), y = lond, group = as.factor(yy)), fill = 'grey50', alpha = 0.2) + 
+  geom_point(data = summ_stats, aes(x = as.numeric(as.character(yy), group = as.factor(yy)), y = mean_lond), 
+             color = "red", size = 1.5) +
+  geom_errorbar(data = summary_stats2, aes(x = as.numeric(as.character(yy), group = as.factor(yy)), 
+                                           ymin = q25, ymax = q75),width = 0.2, color = "black") +
+  facet_wrap(~flag2) +
+  gg.theme +
+  labs(x = 'Year', y = 'Longitude') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  geom_hline(yintercept = mean(sbest_dat$lond, na.rm=TRUE), linetype = "dashed", color = 'black')
+p
+#ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_lond_by_yr_flag.png'))
+
+# stacked barplot of set type by year by flag
+p <- 
+  sbest_dat |>
+  ggplot() +
+  aes(as.numeric(as.character(yy)), fill = set_type) +
   geom_bar(position = 'fill') +
   scale_fill_brewer(palette = 'Set1') +
   scale_y_continuous(labels = scales::percent_format()) +
   facet_wrap(~flag) +
   gg.theme +
-  labs(x = 'Year', y = 'Sets (%)', fill = 'Set type')
+  labs(x = 'Year', y = 'Sets (%)', fill = 'Set type') +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 p
-ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_set_type_by_yr_flag.png')
+#ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_set_type_by_yr_flag.png'))
 
-# Longitude by year
-summary_stats <- sbest_dat %>%
-  group_by(yy) %>%
-  summarise(
-    mean_lond = mean(lond, na.rm = TRUE),
-    q25 = quantile(lond, 0.25, na.rm = TRUE),
-    q75 = quantile(lond, 0.75, na.rm = TRUE)
-  )
+# Longitude distribution of sets by flag  and year stacked
 p <- 
-  sbest_dat |>
-  ggplot() +
-  geom_violin(aes(x=as.factor(yy), y = lond), fill = 'grey50', alpha = 0.2) + 
-  geom_point(data = summary_stats, aes(x = as.factor(yy), y = mean_lond), 
-             color = "red", size = 1.5) +
-  geom_errorbar(data = summary_stats, aes(x = as.factor(yy), ymin = q25, ymax = q75),
-                width = 0.2, color = "black") +
-  gg.theme +
-  labs(x = 'Year', y = 'Longitude') +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  geom_hline(yintercept = mean(sbest_dat$lond, na.rm=TRUE), linetype = "dashed", color = "red")
-  # geom_point(data = mean_lond_by_year, aes(x = as.factor(yy), y = mean_lond), 
-  #            color = "blue", size = 1.5) + 
-
-p
-ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_lond_by_yr.png')
-
-# Longitude by year and flag
-summary_stats2 <- sbest_dat %>%
-  group_by(yy, flag) %>%
-  summarise(
-    mean_lond = mean(lond, na.rm = TRUE),
-    q25 = quantile(lond, 0.25, na.rm = TRUE),
-    q75 = quantile(lond, 0.75, na.rm = TRUE)
-  )
-p <- 
-  sbest_dat |>
-  ggplot() +
-  geom_violin(aes(x=as.factor(yy), y = lond), fill = 'grey50', alpha = 0.2) + 
-  geom_point(data = summary_stats2, aes(x = as.factor(yy), y = mean_lond), 
-             color = "red", size = 1.5) +
-  geom_errorbar(data = summary_stats2, aes(x = as.factor(yy), ymin = q25, ymax = q75),
-                width = 0.2, color = "black") +
-  facet_wrap(~flag) +
-  gg.theme +
-  labs(x = 'Year', y = 'Longitude') +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  geom_hline(yintercept = mean(sbest_dat$lond, na.rm=TRUE), linetype = "dashed", color = 'blue')
-# geom_point(data = mean_lond_by_year, aes(x = as.factor(yy), y = mean_lond), 
-#            color = "blue", size = 1.5) + 
-p
-ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_lond_by_yr_flag.png')
-
-p <- 
-sbest_dat |>
-  dplyr::filter(!is.na(flag)) |>
+  sbest_dat3 |>
   ggplot() +
   aes(x = lond, fill = flag) +
-  geom_bar(position = 'identity') +
-  #scale_y_continuous(labels = scales::percent_format()) +
-  #scale_fill_brewer(palette = 'Set1') +
+  geom_bar(position = 'fill') +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = 'Set3') +
+  facet_wrap(~yy) +
+  labs(x = 'Longitude', y = 'Sets (%)', fill = 'Flag') +
+  gg.theme +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.5))
+p 
+#ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_set_by_lond_yr_%fill.png'))
+
+# Explore set type
+p <- 
+sbest_dat |>
+  ggplot() +
+  aes(x = lond, fill = set_type) +
+  geom_bar(position = 'fill') +
+  scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = 'Set1') +
   facet_wrap(~yy) +
   labs(x = 'Longitude', y = 'Sets', fill = 'Set type') +
-  gg.theme
-p 
-ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_set_by_lond_yr_raw.png')
+  gg.theme +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.5))
+p
+#ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_set_by_settype_yr_stacked.png'))
 
-p <- 
-  sbest_dat |>
-  dplyr::filter(!is.na(flag)) |>
+# By ENSO
+p <-
+  sbest_dat2 |>
   ggplot() +
-  aes(x = lond, fill = flag) +
-  geom_bar(position = 'fill') +
-  scale_y_continuous(labels = scales::percent_format()) +
-  #scale_fill_brewer(palette = 'Set1') +
-  facet_wrap(~yy) +
-  labs(x = 'Longitude', y = 'Sets (%)', fill = 'Set type') +
-  gg.theme
-p 
-ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_set_by_lond_yr_%fill.png')
+  aes(x = lond, y = sets) +
+  geom_bar(stat = 'identity') +
+  #scale_y_continuous(labels = scales::percent_format()) +
+  scale_fill_brewer(palette = 'Set1') +
+  facet_wrap(~oniF, ncol = 1, scales = 'free_y') +
+  labs(x = 'Longitude', y = 'Sets', fill = 'ENSO') +
+  gg.theme +
+  theme(axis.text.x = element_text(angle = 90, hjust = 0.5))
+p
+#ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_set_by_ENSO.png'))
 
-#flgs <- c('VU', 'US', 'TW', 'JP', 'FM', 'KR', 'KI', 'SB', 'PG', 'PH')
-
-# 3.2 clean PS logbook data ----
-
+# 4. clean PS logbook data ----
 load(file = paste0(data_wd, "long_deviance/logbook_ps_raw_data.Rdata"))
-
-head(logps_raw)
 
 logps_dat <-
   logps_raw |>
@@ -404,54 +438,31 @@ logps_dat <-
          latd2 = round(latd / 5) * 5, lond2 = round(lond / 5) * 5) |>
   dplyr::filter(WCP_CA %in% c(1, 2)) |> # & latd >= -20 & latd <= 10 & lond >= 140 & lond <=210
   dplyr::select(-WCP_CA) |>
-  dplyr::filter(latd <= 10 & latd >= -15 & lond >= 130 & 
-                  !((flag_id == 'PH' & flag_rg_id == 'PH') | (flag_id == 'ID' & flag_rg_id == 'ID')) &
-                  !is.na(set_type)) |> 
+  dplyr::filter(!(latd > 10 | latd < -15) & lond >= 130) |>
+  #dplyr::filter(flag_id %in% flgs & !(flag_id == 'PH' & flag_rg_id == 'PH') &
+                  #!is.na(set_type)) |> 
   droplevels() |>
   dplyr::select(set_id = log_set_id, yy, mm, latd, lond, latd2, lond2, flag = flag_id, 
-                flag2 = flag_rg_id, vessel_id, set_type, BET, SKJ, YFT)
+                flag2 = flag_rg_id, vessel_id, set_type, BET, SKJ, YFT) |>
+  left_join(oni_data, by = c('yy', 'mm'))
 
-# library(lubridate)
-# logps_dat <- 
-#   logps_raw |>
-#   mutate(date = ymd_hms(logdate), yy = year(logdate), mm = month(logdate)) |>
-#   dplyr::select(-c(log_trip_id, logdate)) |>
-#   dplyr::filter(yy %in% c(1990:2023) & s_activity_id == 1) |>
-#   mutate(set_type = as.factor(case_when(school_id %in% c(3,4) ~ 'DFAD',
-#                                         school_id %in% c(5) ~ 'AFAD',
-#                                         school_id %in% c(6,7) ~ 'WHALE',
-#                                         school_id %in% c(1,2,-9) ~ 'FREE',
-#                                         school_id == 0 ~ NA)),
-#          latd = as.numeric(latd), lond = ifelse(as.numeric(lond) < 0, as.numeric(lond) + 360, as.numeric(lond)),
-#          WCP_CA = point.in.polygon(lond, latd, coords[,1], coords[,2]),
-#          latd2 = round(latd / 5) * 5, lond2 = round(lond / 5) * 5,
-#          yy = as.factor(yy), mm = as.numeric(mm),
-#          sp_code = as.factor(sp_code), sp_mt = as.numeric(sp_mt), vessel_id = as.factor(vessel_id),
-#          log_set_id = as.factor(log_set_id),
-#          effort_factor = as.numeric(effort_factor),
-#          flag_rg_id = as.factor(flag_rg_id),
-#          flag_id = as.factor(flag_id)) |>
-#   dplyr::filter(WCP_CA %in% c(1, 2)) |> # & latd >= -20 & latd <= 10 & lond >= 140 & lond <=210
-#   dplyr::select(-WCP_CA) |>
-#   dplyr::filter(latd <= 10 & latd >= -15 & lond >= 130 & 
-#                   !((flag_id == 'PH' & flag_rg_id == 'PH') | (flag_id == 'ID' & flag_rg_id == 'ID')) &
-#                   !is.na(set_type) & sp_code %in% c('BET', 'SKJ', 'YFT')) |> 
-#   droplevels() |>
-#   dplyr::select(set_id = log_set_id, yy, mm, latd, lond, latd2, lond2, flag = flag_id, 
-#                 flag2 = flag_rg_id, vessel_id, set_type, effort_factor, sp_code, sp_mt)
+logps_dat2 <- logps_dat |>
+  dplyr::filter(flag %in% flgs & !(flag == 'PH' & flag2 == 'PH') & !is.na(set_type)) |>
+  dplyr::filter(flag != 'PH') |>
+  mutate(SKJ_log = log(SKJ + 1)) |>
+  droplevels()
+table(logps_dat2$yy, logps_dat2$flag)
+table(logps_dat$yy, logps_dat$flag)
 
-#save(logps_dat, file = paste0(data_wd, "long_deviance/logbook_ps_cleaned_data.Rdata"))
-load(file = paste0(data_wd, "long_deviance/logbook_ps_cleaned_data.Rdata"))
-# Drop flags with <100 sets and group by set id so 1 row = 1 set
-# logps_dat2 <- logps_dat |>
-#   dplyr::filter(!(flag %in% c('BN', 'FJ', 'PA'))) |>
-#   group_by(set_id, yy, mm, latd, lond, latd2, lond2, flag, flag2, vessel_id, set_type, effort_factor) |>
-#   summarise(SKJ = sum(sp_mt[sp_code == 'SKJ'], na.rm = T),
-#             YFT = sum(sp_mt[sp_code == 'YFT'], na.rm = T),
-#             BET = sum(sp_mt[sp_code == 'BET'], na.rm = T))
+save(logps_dat2, file = paste0(data_wd, "long_deviance/logbook_ps_cleaned_data2.Rdata"))
 
+# 4.1 Plot logbook data
+#load(file = paste0(data_wd, "long_deviance/logbook_ps_raw_data.Rdata"))
+load(file = paste0(data_wd, "long_deviance/logbook_ps_cleaned_data2.Rdata"))
+
+# Map data by flag to ID errors
 logps_dat |>
-  group_by(flag, lond2, latd2) |>
+  group_by(lond2, latd2) |>
   summarise(sets = n()) |>
   ggplot() +
   aes(lond2, latd2, fill = sets) +
@@ -459,9 +470,31 @@ logps_dat |>
   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
   coord_sf(xlim = c(100, 300), ylim = c(-50, 50)) +
   scale_fill_viridis_c() +
-  facet_wrap(~flag) +
+  #facet_wrap(~flag) +
   gg.theme +
   labs(x = 'Longitude', y = 'Latitude', fill = 'Stdeff')
+
+# Check flags
+summ_stats <- logps_dat %>%
+  mutate(flag2 = as.factor(ifelse(flag %in% c(flgs), paste0(flag,'*'), paste0(flag)))) |>
+  group_by(yy, flag2) %>%
+  summarise(mean_lond = mean(lond, na.rm = TRUE),
+            q25 = quantile(lond, 0.25, na.rm = TRUE),
+            q75 = quantile(lond, 0.75, na.rm = TRUE))
+
+logps_dat |>
+  mutate(flag2 = as.factor(ifelse(flag %in% c(flgs), paste0(flag,'*'), paste0(flag)))) |>
+  ggplot() +
+  geom_violin(aes(x=as.numeric(as.character(yy)), y = lond, group = as.factor(yy)), fill = 'grey50', alpha = 0.2) + 
+  geom_point(data = summ_stats, aes(x = as.numeric(as.character(yy), group = as.factor(yy)), y = mean_lond), 
+             color = "red", size = 1.5) +
+  geom_errorbar(data = summ_stats, aes(x = as.numeric(as.character(yy), group = as.factor(yy)), 
+                                           ymin = q25, ymax = q75),width = 0.2, color = "black") +
+  facet_wrap(~flag2) +
+  gg.theme +
+  labs(x = 'Year', y = 'Longitude') +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
+  geom_hline(yintercept = mean(logps_dat$lond, na.rm=TRUE), linetype = "dashed", color = 'black')
 
 tmp1 <- sbest_dat |>
   group_by(yy) |>
@@ -485,600 +518,50 @@ bind_rows(tmp1,tmp2) |>
   gg.theme +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 p
-#ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_catch_effort_logbook_vs_sbest.png')
-
-# 4. Add ENSO data ----
-# Here we extract ENSO data from NOAA website and add to dataset as a variable
-
-# Get ONI data from NOAA website
-# url <- "https://psl.noaa.gov/data/correlation/oni.data"
-# destfile <- "../data/oni.data"
-# download.file(url, destfile, mode = "wb")
-destfile <- paste0(data_wd, 'long_deviance/oni.data.txt')
-
-# Tidy data file
-oni_data <- read.table(destfile, header = FALSE, fill = TRUE)[-1,] |>
-  setNames(c("year", paste0('M',c(1:12)))) |>
-  dplyr::filter(year %in% c(1950:2025)) |>
-  mutate(across(starts_with("M"), as.numeric)) |>
-  pivot_longer(-year, names_to = 'month', values_to = 'oni') |>
-  mutate(month = as.numeric(str_remove(month, "M")),
-         year = as.numeric(year),
-         oniF = as.factor(ifelse(oni >= 0.5, "elnino", 
-                       ifelse(oni <= -0.5, "lanina", "neutral")))) |>
-  dplyr::filter(oni != -99.9) |>
-  dplyr::rename(yy = year, mm = month)
-
-# Join to data by year and month
-sbest_dat <- left_join(sbest_dat, oni_data, by = c('yy', 'mm'))
-logps_dat <- left_join(logps_dat, oni_data, by = c('yy', 'mm'))
-
+#ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_catch_effort_logbook_vs_sbest.png'))
 
 # 5. Final data prep for model ----
 
 # 5.1 sbest data ----
-# As the data is a bit messy, we aggregate to the 1 degree bin by year, month, flag etc
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 
-# See where the NAs are if any - fleet and set type
-colSums(is.na(sbest_dat))
-
-# 5.1 Get historical mean longitude of set locations from 1995:2025 ----
-
-# 160.7 lon for sets, 161.1 for stdeff
-tmp <- sbest_dat |> uncount(round(sets,0))
-tmp2 <- sbest_dat |> uncount(round(stdeff,0))
-
-hist_mn_lon <- mean(tmp$lond[tmp$yy %in% c(1995:2005)])
-hist_mn_lon2 <- mean(tmp2$lond[tmp$yy %in% c(1995:2005)])
-rm(tmp,tmp2)
-
-# 5.2 Group by all vars of interest to summarise data ----
-# sbest_dat2 <- sbest_dat |>
-#   group_by(yy, mm, lond, latd, flag, set_type, oniF) |>
-#   summarise(stdeff = sum(stdeff, na.rm = T),
-#             sets = sum(sets, na.rm =T),
-#             BET = sum(BET, na.rm = T),
-#             SKJ = sum(SKJ, na.rm = T),
-#             YFT = sum(YFT, na.rm = T)) |>
-#   pivot_longer(-c(yy, mm, lond, latd, flag, set_type, oniF, sets, stdeff), names_to = 'sp_code',
-#                values_to = 'catch_mt') |>
-#   mutate(cpue = catch_mt/sets, lond_dev = lond - hist_mn_lon,
-#          cpue_log = log(cpue + 1)) #|>
-#  #dplyr::filter(!is.na(set_type) & sets >= 1)
-
-sbest_dat2 <-
-  sbest_dat |>
-  group_by(yy, mm, lond, latd, flag, set_type, oniF) |>
-  summarise(stdeff = sum(stdeff, na.rm = T),
-            sets = sum(sets, na.rm =T),
-            SKJ = sum(SKJ, na.rm = T)) |>
-  #dplyr::select(lond, latd, yy, mm, flag, set_type, oniF, stdeff, sets, SKJ) |>
-  dplyr::filter(!is.na(set_type) & SKJ > 0) |>
-  mutate(cpue = SKJ/stdeff, cpue_log = log(cpue + 1),
-         yy = as.factor(yy))
-
-# Any NAs left?
-colSums(is.na(sbest_dat2))
-
-hist(sbest_dat2$lond)
-hist(sbest_dat2$cpue)
-hist(sbest_dat2$cpue_log)
-
-save(sbest_dat2, file = paste0(data_wd, "long_deviance/PS_SBEST1_counted_1990-2023_clean_data.Rdata"))
-
-# 5.3 uncount sets to make rows 'equal' ----
-# Round sets column and then uncount it. Note, cpue = adjusted catch now (ie catch/set)
-
-sbest_dat2 |>
-  ggplot() +
-  aes(stdeff) +
-  geom_histogram(binwidth = 0.2) +
-  gg.theme +
-  xlim(-1,50)
-
-sbest_dat2 |>
-  ggplot() +
-  aes(sets) +
-  geom_histogram(binwidth = 0.2) +
-  gg.theme +
-  xlim(-1,50)
-
-sbest_dat3 <-
-  sbest_dat2 |>
-  mutate(sets = floor(sets)) |>
-  uncount(sets)
-
-nrow(sbest_dat2)
-nrow(sbest_dat3)
-
-# Any NAs left?
+# final checks
 colSums(is.na(sbest_dat3))
-
-# Check data structure
+table(sbest_dat3$yy, sbest_dat3$flag)
 glimpse(sbest_dat3)
-save(sbest_dat3, file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata"))
 
-# TBC - does cpue look right?
-# lond_dev not quite normal distributed - what error distribution to use
 hist(sbest_dat3$lond)
-hist(sbest_dat3$cpue)
 hist(sbest_dat3$cpue_log)
 
+# 5.2 logbook data ----
+load(file = paste0(data_wd, "long_deviance/logbook_ps_cleaned_data2.Rdata"))
 
-# 6. Plot data before modeling ----
-
-# Lond by set type
-p <- 
-  sbest_dat3 |>
-  ggplot() +
-  aes(lond) +
-  geom_histogram(binwidth = 1) +
-  facet_wrap(~set_type, scales = 'free_y') +
-  gg.theme +
-  labs(x = 'Longitude', y = 'Count')
-p
-#ggsave(p, file = '2025_analyses/results/long_deviance/figs/lond_dev_by_settype.png')
-
-# lond by enso
-p <- 
-  sbest_dat3 |>
-  ggplot() +
-  aes(lond) +
-  geom_histogram(binwidth = 1) +
-  facet_wrap(~oniF, scales = 'free_y', ncol = 1) +
-  gg.theme +
-  labs(x = 'Longitude', y = 'Count')
-p
-#ggsave(p, file = '2025_analyses/results/long_deviance/figs/lond_dev_by_enso.png')
-
-# lond by year
-p <- 
-  sbest_dat3 |>
-  ggplot() +
-  aes(lond) +
-  geom_histogram(binwidth = 1) +
-  facet_wrap(~yy, scales = 'free_y') +
-  gg.theme +
-  labs(x = 'Longitude', y = 'Count')
-p
-#ggsave(p, file = '2025_analyses/results/long_deviance/figs/lond_dev_by_yy.png')
-
-# Map mean annual effort
-p <- 
-  sbest_dat3 |>
-  #dplyr::filter(yy %in% c(2019:2023)) |>
-  group_by(latd, lond, yy, .drop = T) |>
-  mutate(mn_eff = sum(stdeff, na.rm = T)) |>
-  group_by(latd, lond) |>
-  summarise(mn_eff = mean(mn_eff, na.rm = T)) |>
-  ggplot() +
-  aes(lond, latd, fill = mn_eff) +
-  geom_tile() +
-  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
-  coord_sf(xlim = c(110, 230), ylim = c(-20, 10)) +
-  scale_fill_viridis_c() +
-  #facet_wrap(~yy, ncol = 1) +
-  gg.theme +
-  labs(x = 'Longitude', y = 'Latitude', fill = 'Stdeff')
-p
-#ggsave(p, file = '2025_analyses/results/long_deviance/figs/map_mean_ps_effort_yy.png')
-
-# Map mean annual catch for SKJ
-p <- 
-  sbest_dat3 |>
-  #dplyr::filter(yy %in% c(2019:2023)) |>
-  group_by(latd, lond, yy, .drop = T) |>
-  mutate(mn_catch = sum(SKJ, na.rm = T)) |>
-  group_by(latd, lond) |>
-  summarise(mn_catch = mean(mn_catch, na.rm = T)) |>
-  ggplot() +
-  aes(lond, latd, fill = mn_catch/1000) +
-  geom_tile() +
-  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
-  coord_sf(xlim = c(110, 230), ylim = c(-20, 10)) +
-  scale_fill_viridis_c() +
-  #facet_wrap(~sp_code, ncol = 1) +
-  gg.theme +
-  labs(x = 'Longitude', y = 'Latitude', fill = 'Catch (x1000t)')
-p
-#ggsave(p, file = '2025_analyses/results/long_deviance/figs/map_mean_ps_catch_yy.png')
-
-# Map mean effort by enso
-p <- 
-  sbest_dat3 |>
-  #dplyr::filter(yy %in% c(2019:2023)) |>
-  group_by(latd, lond, yy, oniF, .drop = T) |>
-  mutate(mn_eff = sum(stdeff, na.rm = T)) |>
-  group_by(latd, lond, oniF) |>
-  summarise(mn_eff = mean(mn_eff, na.rm = T)) |>
-  ggplot() +
-  aes(lond, latd, fill = mn_eff) +
-  geom_tile() +
-  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
-  coord_sf(xlim = c(110, 230), ylim = c(-20, 10)) +
-  scale_fill_viridis_c() +
-  facet_wrap(~oniF, ncol = 1) +
-  gg.theme +
-  labs(x = 'Longitude', y = 'Latitude', fill = 'stdeff')
-p
-#ggsave(p, file = '2025_analyses/results/long_deviance/figs/map_mean_ps_effort_enso_yy.png')
-
-# Explore longitude and sets by flag
-p <- 
-  sbest_dat3 |>
-  ggplot() +
-  aes(yy, fill = set_type) +
-  geom_bar(position = 'fill') +
-  scale_fill_brewer(palette = 'Set1') +
-  scale_y_continuous(labels = scales::percent_format()) +
-  #facet_wrap(~yy) +
-  gg.theme +
-  labs(x = 'Year', y = 'Sets (%)', fill = 'Set type')
-p
-ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_set_type_by_yr.png'))
-
-p <- 
-  sbest_dat3 |>
-  ggplot() +
-  aes(yy, fill = set_type) +
-  geom_bar(position = 'fill') +
-  scale_fill_brewer(palette = 'Set1') +
-  scale_y_continuous(labels = scales::percent_format()) +
-  facet_wrap(~flag) +
-  gg.theme +
-  labs(x = 'Year', y = 'Sets (%)', fill = 'Set type')
-p
-ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_set_type_by_yr_flag.png'))
-
-# Longitude by year
-summary_stats <- sbest_dat %>%
-  group_by(yy) %>%
-  summarise(
-    mean_lond = mean(lond, na.rm = TRUE),
-    q25 = quantile(lond, 0.25, na.rm = TRUE),
-    q75 = quantile(lond, 0.75, na.rm = TRUE))
-
-p <- 
-  sbest_dat3 |>
-  ggplot() +
-  geom_violin(aes(x=as.factor(yy), y = lond), fill = 'grey50', alpha = 0.2) + 
-  geom_point(data = summary_stats, aes(x = as.factor(yy), y = mean_lond), 
-             color = "red", size = 1.5) +
-  geom_errorbar(data = summary_stats, aes(x = as.factor(yy), ymin = q25, ymax = q75),
-                width = 0.2, color = "black") +
-  gg.theme +
-  labs(x = 'Year', y = 'Longitude') +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  geom_hline(yintercept = mean(sbest_dat$lond, na.rm=TRUE), linetype = "dashed", color = "red")
-
-p
-ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_lond_by_yr.png'))
-
-# Longitude by year and flag
-summary_stats2 <- sbest_dat %>%
-  group_by(yy, flag) %>%
-  summarise(
-    mean_lond = mean(lond, na.rm = TRUE),
-    q25 = quantile(lond, 0.25, na.rm = TRUE),
-    q75 = quantile(lond, 0.75, na.rm = TRUE))
-
-p <- 
-  sbest_dat3 |>
-  ggplot() +
-  geom_violin(aes(x=as.factor(yy), y = lond), fill = 'grey50', alpha = 0.2) + 
-  geom_point(data = summary_stats2, aes(x = as.factor(yy), y = mean_lond), 
-             color = "red", size = 1.5) +
-  geom_errorbar(data = summary_stats2, aes(x = as.factor(yy), ymin = q25, ymax = q75),
-                width = 0.2, color = "black") +
-  facet_wrap(~flag) +
-  gg.theme +
-  labs(x = 'Year', y = 'Longitude') +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1)) + 
-  geom_hline(yintercept = mean(sbest_dat$lond, na.rm=TRUE), linetype = "dashed", color = 'blue')
-p
-ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_lond_by_yr_flag.png'))
-
-flgs <- c("VU", "US", "TW", "JP", "FM", "KR", "KI", "SB", "PG", "PH")
-
-p <- 
-  sbest_dat3 |>
-  dplyr::filter(flag %in% flgs) |>
-  ggplot() +
-  aes(x = lond, fill = flag) +
-  geom_bar(position = 'identity') +
-  #scale_y_continuous(labels = scales::percent_format()) +
-  scale_fill_brewer(palette = 'Set3') +
-  facet_wrap(~yy) +
-  labs(x = 'Longitude', y = 'Sets', fill = 'Flag') +
-  gg.theme
-p 
-ggsave(p, file = paste0(results_wd, 'long_deviance/figs/ps_eff_by_yr_flag_lond.png'))
-
-p <- 
-  sbest_dat3 |>
-  dplyr::filter(flag %in% flgs) |>
-  ggplot() +
-  aes(x = lond, fill = flag) +
-  geom_bar(position = 'fill') +
-  #scale_y_continuous(labels = scales::percent_format()) +
-  scale_fill_brewer(palette = 'Set3') +
-  facet_wrap(~yy) +
-  labs(x = 'Longitude', y = 'Sets', fill = 'Flag') +
-  gg.theme
-p 
-ggsave(p, file = paste0(results_wd, 'long_deviance/figs/longps_eff_by_yr_flag_lond2.png'))
-
-p <- 
-  sbest_dat |>
-  dplyr::filter(!is.na(flag)) |>
-  ggplot() +
-  aes(x = lond, fill = flag) +
-  geom_bar(position = 'fill') +
-  scale_y_continuous(labels = scales::percent_format()) +
-  #scale_fill_brewer(palette = 'Set1') +
-  facet_wrap(~yy) +
-  labs(x = 'Longitude', y = 'Sets (%)', fill = 'Set type') +
-  gg.theme
-p 
-ggsave(p, file = '2025_analyses/results/long_deviance/figs/ps_set_by_lond_yr_%fill.png')
-
-# 7. tidy logbook data ----
-
-logps_dat2 <- logps_dat |>
-  #dplyr::filter(SKJ > 0) |>
-  mutate(SKJ_log = log(SKJ + 1),
-         yy = as.factor(yy))
-
-# Any NAs left?
-colSums(is.na(logps_dat))
+# final checks
+colSums(is.na(logps_dat2))
+table(logps_dat2$yy, logps_dat2$flag)
+glimpse(logps_dat2)
 
 hist(logps_dat2$lond)
-hist(logps_dat2$SKJ)
 hist(logps_dat2$SKJ_log)
 
-logps_dat2 |>
-  ggplot() +
-  aes(lond) +
-  geom_histogram() +
-  facet_wrap(~yy, scales = 'free_y')
-
-save(logps_dat2, file = paste0(data_wd, "long_deviance/PS_logbook_1990-2023_clean_data.Rdata"))
-
-# 8. Run models ----
+# 6. Run models ----
 
 mod.dir <- paste0(results_wd, 'long_deviance/')
 sp <- 'SKJ'
 #dw_flags <- c('CN', 'FM', 'JP', 'KI', 'KR', 'PG', 'TW', 'US', 'VU')
 flgs <- c("VU", "US", "TW", "JP", "FM", "KR", "KI", "SB", "PG", "PH")
 
-# 8.1 SBEST uncounted all lond model ----
-
-load(file = "2025_analyses/data/long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata")
-head(sbest_dat3)
-
-df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(!(flag %in% c('FR', 'EP', 'VN', 'PA')))  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
-
-fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-
-mod_nm <- paste0('/modA_sbest_uncounted_sets_all_cpuelogwts_lond')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = Gamma(link = "log"), #Gamma(link = "log")
-  weights = df$cpue_log,
-  method = "REML")
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-# 8.2 SBEST uncounted free school/DW lond model ----
-
-load(file = "2025_analyses/data/long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata")
-head(sbest_dat3)
-
-df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% dw_flags & set_type == 'FREE')  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
-
-fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag  + oniF + s(latd, k=5) 
-
-mod_nm <- paste0('/modB_sbest_uncounted_sets_freedw_cpuelogwts_lond')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = Gamma(link = "log"), #Gamma(link = "log")
-  weights = df$cpue_log,
-  method = "REML")
-
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-# 8.3 SBEST counted all cpue model ----
-
-load(file = "2025_analyses/data/long_deviance/PS_SBEST1_counted_1990-2023_clean_data.Rdata")
-head(sbest_dat2)
-
-df <- sbest_dat2 |>
-  dplyr::filter(!(flag %in% c('FR', 'EP', 'VN', 'PA')) & !is.infinite(cpue))  |>
-  droplevels() |>
-  mutate(sets_log = log(sets + 1), stdeff_log = log(stdeff + 1)) |>
-  dplyr::filter(sets >= 1) |>
-  mutate(yy = as.factor(yy))
-
-fn <- cpue_log ~ yy + s(mm, k = 3, bs ="cc") + flag  + set_type + oniF + s(latd, k=5) + s(lond, by = yy)
-
-mod_nm <- paste0('/modC_sbest_counted_sets_all_stdeffwts_cpue')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = gaussian(link = "identity"), #Gamma(link = "log")
-  weights = df$stdeff_log,
-  method = "REML")
-
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-# 8.4 SBEST counted FREE/DW subset cpue model ----
-
-load(file = "2025_analyses/data/long_deviance/PS_SBEST1_counted_1990-2023_clean_data.Rdata")
-head(sbest_dat2)
-
-df <- sbest_dat2 |>
-  dplyr::filter(flag %in% dw_flags & set_type == 'FREE'& !is.infinite(cpue))  |>
-  droplevels() |>
-  mutate(sets_log = log(sets + 1), stdeff_log = log(stdeff + 1)) |>
-  dplyr::filter(sets >= 1) |>
-  mutate(yy = as.factor(yy))
-
-fn <- cpue_log ~ yy + s(mm, k = 3, bs ="cc") + flag  + oniF + s(latd, k=5) + s(lond, by = yy)
-
-mod_nm <- paste0('/modD_sbest_counted_sets_freedw_stdeffwts_cpue')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = gaussian(link = "identity"), #Gamma(link = "log")
-  weights = df$stdeff_log,
-  method = "REML")
-
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-# 8.5 logbook all lond model ----
-
-load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
-head(logps_dat2)
-
-df <- logps_dat2  |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(!(flag %in% c('FJ')))  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
-
-fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-
-mod_nm <- paste0('/modE_logbk_sets_all_catchlogwts_lond')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = Gamma(link = "log"), #Gamma(link = "log")
-  weights = df$SKJ_log,
-  method = "REML")
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-# 8.6 logbook DW/free lond model ----
-
-load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
-head(logps_dat2)
-
-df <- logps_dat2  |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% dw_flags & set_type == 'FREE')  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
-
-fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + oniF + s(latd, k=5) 
-
-mod_nm <- paste0('/modF_logbk_sets_freedw_catchlogwts_lond')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = Gamma(link = "log"), #Gamma(link = "log")
-  weights = df$SKJ_log,
-  method = "REML")
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-# 8.7 logbook all sets cpue model ----
-
-load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
-head(logps_dat2)
-
-df <- logps_dat2  |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(!(flag %in% c('FJ')))  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
-
-fn <- SKJ_log ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) + s(lond, by = yy)
-
-mod_nm <- paste0('/modG_logbk_sets_all_nowts_catch')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = gaussian(link = "identity"),  #Gamma(link = "log")
-  #weights = df$SKJ_log,
-  method = "REML")
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-# 8.8 logbook free/dw sets cpue model ----
-
-load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
-head(logps_dat2)
-
-load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
-head(logps_dat2)
-
-df <- logps_dat2  |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(!(flag %in% c('FJ')))  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
-
-df <- logps_dat2  |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% dw_flags & set_type == 'FREE')  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
-
-fn <- SKJ_log ~ yy + s(mm, k = 3, bs ="cc") + flag + oniF + s(latd, k=5) + s(lond, by = yy)
-
-mod_nm <- paste0('/modH_logbk_sets_dwfree_nowts_catch')
-dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
-
-mod <- bam(
-  fn, 
-  data = df,
-  family = gaussian(link = "identity"),  #Gamma(link = "log")
-  #weights = df$SKJ_log,
-  method = "REML")
-saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
-
-####################################################
-# 9. Updated Jo models ----
-
-# 9.1 modI - SBEST uncounted no wts linear yy model ----
+# 6.1 modI - SBEST uncounted no wts linear yy model ----
 
 mod.dir <- paste0(results_wd, 'long_deviance/')
 sp <- 'SKJ'
-#dw_flags <- c('CN', 'FM', 'JP', 'KI', 'KR', 'PG', 'TW', 'US', 'VU')
-flgs <- c("VU", "US", "TW", "JP", "FM", "KR", "KI", "SB", "PG", "PH")
 
-load(file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata"))
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 head(sbest_dat3)
 
-df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% flgs & set_type != 'WHALE')  |>
-  droplevels() |>
-  mutate(yy = as.numeric(as.character(yy)))#, set_type = as.factor(ifelse(set_type == 'FREE', 'unassoc', 'assoc')))
+df <- sbest_dat3
 
 fn <- lond ~ yy + s(mm, bs = "cc", k = 6) + s(latd, k = 5) + s(flag, bs = "re", k = 10) + set_type + oniF
-#fn <- lond ~ as.factor(yy) + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-#fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
 
 mod_nm <- paste0('/modI_sbest_uncounted_stes_flgs_nowts_lond_linyy')
 dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
@@ -1091,20 +574,15 @@ mod <- bam(fn,
 saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 mod_yy_linear <- mod
 
-# 9.2 modJ - SBEST uncounted no wts factor yy model ----
+# 6.2 modJ - SBEST uncounted no wts factor yy model ----
 
-load(file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata"))
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 head(sbest_dat3)
 
 df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% flgs & set_type != 'WHALE')  |>
-  droplevels() |>
-  mutate(yy = as.factor(yy))
+  mutate(yy = as.factor(as.character(yy)))
 
 fn <- lond ~ yy + s(mm, bs = "cc", k = 6) + s(latd, k = 5) + flag  + set_type + oniF
-#fn <- lond ~ as.factor(yy) + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-#fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
 
 mod_nm <- paste0('/modJ_sbest_uncounted_sets_flgs_nowts_lond_yyF')
 dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
@@ -1117,20 +595,12 @@ mod <- bam(fn,
 saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 mod_yyF <- mod
 
-# 9.3 SBEST uncounted no wts yr smooth per flag model ----
+# 6.3 modK - SBEST uncounted no wts yr smooth per flag model ----
 
-load(file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata"))
-head(sbest_dat3)
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 
-df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% flgs & set_type != 'WHALE')  |>
-  droplevels() |>
-  mutate(yy = as.numeric(as.character(yy)))
-
+df <- sbest_dat3 
 fn <- lond ~ s(yy, by = flag, k = 20) + s(mm, bs = "cc", k = 6) + s(latd, k = 5) + set_type + oniF
-#fn <- lond ~ as.factor(yy) + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-#fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
 
 mod_nm <- paste0('/modK_sbest_uncounted_sets_flgs_nowts_lond_s(yy_byflag)')
 dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
@@ -1143,20 +613,12 @@ mod <- bam(fn,
 saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 mod_syearbyflag <- mod
 
-# 9.4 SBEST uncounted no wts shared yr flag smooth model ----
+# 6.4 modL - SBEST uncounted no wts shared yr flag smooth model ----
 
-load(file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata"))
-head(sbest_dat3)
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 
-df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% flgs & set_type != 'WHALE')  |>
-  droplevels() |>
-  mutate(yy = as.numeric(as.character(yy)))
-
+df <- sbest_dat3 
 fn <- lond ~ s(yy, flag, bs = "fs") + s(mm, bs = "cc", k = 6) + s(latd, k = 5) + set_type + oniF
-#fn <- lond ~ as.factor(yy) + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-#fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
 
 mod_nm <- paste0('/modL_sbest_uncounted_sets_flgs_nowts_lond_s(yy_flag)_intx')
 dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
@@ -1169,20 +631,14 @@ mod <- bam(fn,
 saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 mod_syearflag <- mod
 
-# 9.5 SBEST uncounted logcpue wts shared yr flag smooth model ----
+# Model 6.4 performs best and so further tests done on this one
 
-load(file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata"))
-head(sbest_dat3)
+# 6.5 modM - SBEST uncounted logcpue wts shared yr flag smooth model ----
 
-df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% flgs & set_type != 'WHALE')  |>
-  droplevels() |>
-  mutate(yy = as.numeric(as.character(yy)))
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 
+df <- sbest_dat3 
 fn <- lond ~ s(yy, flag, bs = "fs") + s(mm, bs = "cc", k = 6) + s(latd, k = 5) + set_type + oniF
-#fn <- lond ~ as.factor(yy) + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-#fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
 
 mod_nm <- paste0('/modM_sbest_uncounted_sets_flgs_logcpuewts_lond_s(yy_flag)_intx')
 dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
@@ -1196,49 +652,18 @@ mod <- bam(fn,
 saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 mod_syearflag_wts <- mod
 
-# 9.6 SBEST uncounted freeschool no wts shared yr flag smooth model ----
+# 6.6 modN - SBEST uncounted freeschool no wts shared yr flag smooth model ----
 
-load(file = paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata"))
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 head(sbest_dat3)
 
 df <- sbest_dat3 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  #dplyr::filter(flag %in% flgs & set_type  == 'FREE')  |>
-  droplevels() |>
-  mutate(yy = as.numeric(as.character(yy)))
-
-df |>
-  dplyr::filter(set_type %in% c('DFAD', 'FREE')) |>
-  ggplot() +
-  aes(as.factor(yy), lond, col  = set_type) +
-  #geom_line() +
-  geom_boxplot(outlier.shape = NA) +
-  gg.theme
-
-mn_lond <- mean(df$lond, na.rm = T)
-
-df |>
-  dplyr::filter(set_type %in% c('DFAD', 'FREE') & flag %in% flgs) |>
-  group_by(yy, set_type) |>
-  summarise(lond_mn = mean(lond, na.rm = T),
-            lond_25 = quantile(lond, .25), 
-            lond_75 = quantile(lond, .75)) |>
-  ggplot() +
-  aes(yy, lond_mn, ymin = lond_25, ymax = lond_75, col = set_type) +
-  geom_errorbar(position = 'dodge') +
-  geom_line() +
-  geom_point(position = position_dodge(width = 0.5), size = 2) +
-  geom_hline(yintercept = mn_lond, linetype = 'dashed') +
-  gg.theme +
-  scale_color_brewer(palette = 'Set1') +
-  theme(legend.position = 'bottom') +
-  labs(x = 'Year', y = 'Longitude', col = 'Set type')
+  dplyr::filter(set_type  == 'FREE')|>
+  droplevels()
 
 table(df$yy, df$flag)
 
 fn <- lond ~ s(yy, flag, bs = "fs") + s(mm, bs = "cc", k = 6) + s(latd, k = 5) + oniF
-#fn <- lond ~ as.factor(yy) + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-#fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
 
 mod_nm <- paste0('/modN_sbest_uncounted_FSsets_flgs_nowts_lond_s(yy_flag)_intx')
 dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
@@ -1251,22 +676,16 @@ mod <- bam(fn,
 saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 mod_syearflag_FS <- mod
 
-# 9.7 logbook no wts shared yr flag smooth model ----
+# 6.7 modO - logbook no wts shared yr flag smooth model ----
 
-load( file = paste0(data_wd, "long_deviance/PS_logbook_1990-2023_clean_data.Rdata"))
+load(file = paste0(data_wd, "long_deviance/logbook_ps_cleaned_data2.Rdata"))
 head(logps_dat2)
 
 df <- logps_dat2 |>
-  #mutate(SKJ_log = log(SKJ + 1)) |>
-  dplyr::filter(flag %in% flgs & set_type  != 'WHALE' & flag != 'PH')  |>
   droplevels() |>
   mutate(yy = as.numeric(as.character(yy)))
 
-table(df$yy, df$flag)
-
 fn <- lond ~ s(yy, flag, bs = "fs") + s(mm, bs = "cc", k = 6) + s(latd, k = 5) + set_type + oniF
-#fn <- lond ~ as.factor(yy) + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
-#fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
 
 mod_nm <- paste0('/modO_logbook_sets_flgs_nowts_lond_s(yy_flag)_intx')
 dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
@@ -1279,42 +698,41 @@ mod <- bam(fn,
 saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 mod_syearflag_logbk <- mod
 
-# 10. Evaluate Jo models ----
+# Now go to long_deviance_model_eval.R for model evaluation
+####################################################
 
+
+# 7. Evaluate Jo models ----
+
+# AIC for each model - note can't compare last 2 models - different input data
 AIC(mod_yy_linear, 
     mod_yyF, 
     mod_syearbyflag,
-    mod_syearflag) 
-
-summary(mod_yy_linear)$dev.expl
-summary(mod_yyF)$dev.expl
-summary(mod_syearbyflag)$dev.expl
-summary(mod_syearflag)$dev.expl
-
-AIC(mod_syearflag, 
+    mod_syearflag,
     mod_syearflag_wts, 
     mod_syearflag_FS,
     mod_syearflag_logbk) 
 
+# deviance explained
+summary(mod_yy_linear)$dev.expl
+summary(mod_yyF)$dev.expl
+summary(mod_syearbyflag)$dev.expl
 summary(mod_syearflag)$dev.expl
 summary(mod_syearflag_wts)$dev.expl
 summary(mod_syearflag_FS)$dev.expl
 summary(mod_syearflag_logbk)$dev.expl
 
+# Plot year effect
 library(ggeffects)
-p1 <- ggpredict(mod_yy_linear, terms = "yy")
-p2 <- ggpredict(mod_yyF, terms = "yy")
-p3 <- ggpredict(mod_syearbyflag, terms = "yy")
-p4 <- ggpredict(mod_syearflag, terms = "yy")
+d1 <- as.data.frame(ggpredict(mod_yy_linear, terms = "yy")) |> mutate(mod = 'mod_yy_linear')
+d2 <- as.data.frame(ggpredict(mod_yyF, terms = "yy")) |> mutate(mod = 'mod_yyF', x = as.numeric(as.character(x))) 
+d3 <- as.data.frame(ggpredict(mod_syearbyflag, terms = "yy")) |> mutate(mod = 'mod_syearbyflag')
+d4 <- as.data.frame(ggpredict(mod_syearflag, terms = "yy")) |> mutate(mod = 'mod_syearflag')
+d5 <- as.data.frame(ggpredict(mod_syearflag_wts, terms = "yy")) |> mutate(mod = 'mod_syearflag_wts')
+d6 <- as.data.frame(ggpredict(mod_syearflag_FS, terms = "yy")) |> mutate(mod = 'mod_syearflag_FS')
+d7 <- as.data.frame(ggpredict(mod_syearflag_logbk, terms = "yy")) |> mutate(mod = 'mod_syearflag_logbk')
 
-p7 <- ggpredict(mod_syearflag_FS, terms = "yy")
-
-p5 <- as.data.frame(ggpredict(mod_syearflag, terms = "yy")) |> mutate(mod = 'mod_syearflag')
-p6 <- as.data.frame(ggpredict(mod_syearflag_wts, terms = "yy")) |> mutate(mod = 'mod_syearflag_wts')
-p7 <- as.data.frame(ggpredict(mod_syearflag_FS, terms = "yy")) |> mutate(mod = 'mod_syearflag_FS')
-p8 <- as.data.frame(ggpredict(mod_syearflag_logbk, terms = "yy")) |> mutate(mod = 'mod_syearflag_logbk')
-
-bind_rows(p5,p6,p7,p8) |>
+bind_rows(p1, p2, p3, p4, p5,p6, p7) |>
   rename(yy = x) |>
   ggplot() +
   aes(x = yy, y = predicted, ymin = conf.low, ymax = conf.high, col = mod, fill = mod) +
@@ -1326,24 +744,23 @@ bind_rows(p5,p6,p7,p8) |>
   labs(x = 'Year', y = 'Predicted longitude', col = 'Model', fill = 'Model')
 
 # Plot
-plot(p1) + ggtitle('mod_yy_linear.pdf') + theme_bw()
-ggsave(paste0(results_wd, 'long_deviance/SKJ/modI_sbest_uncounted_stes_flgs_nowts_lond_linyy/yr_effect_plot.pdf'))
-plot(p2) + ggtitle('mod_yyF.pdf') + theme_bw()
-ggsave(paste0(results_wd, 'long_deviance/SKJ/modJ_sbest_uncounted_sets_flgs_nowts_lond_yyF/yr_effect_plot.pdf'))
-plot(p3) + ggtitle('mod_syearbyflag') + theme_bw()
-ggsave(paste0(results_wd, 'long_deviance/SKJ/modK_sbest_uncounted_sets_flgs_nowts_lond_s(yy_byflag)/yr_effect_plot.pdf'))
-plot(p4) + ggtitle('mod_syearflag') + theme_bw()
-ggsave(paste0(results_wd, 'long_deviance/SKJ/modL_sbest_uncounted_sets_flgs_nowts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
+p1 <- plot(ggpredict(mod_yy_linear, terms = "yy")) + ggtitle('mod_yy_linear.pdf') + theme_bw()
+#ggsave(paste0(results_wd, 'long_deviance/SKJ/modI_sbest_uncounted_stes_flgs_nowts_lond_linyy/yr_effect_plot.pdf'))
+p2 <- plot(ggpredict(mod_yyF, terms = "yy")) + ggtitle('mod_yyF.pdf') + theme_bw()
+#ggsave(paste0(results_wd, 'long_deviance/SKJ/modJ_sbest_uncounted_sets_flgs_nowts_lond_yyF/yr_effect_plot.pdf'))
+p3 <- plot(ggpredict(mod_syearbyflag, terms = "yy")) + ggtitle('mod_syearbyflag') + theme_bw()
+#ggsave(paste0(results_wd, 'long_deviance/SKJ/modK_sbest_uncounted_sets_flgs_nowts_lond_s(yy_byflag)/yr_effect_plot.pdf'))
+p4 <- plot(ggpredict(mod_syearflag, terms = "yy")) + ggtitle('mod_syearflag') + theme_bw()
+#ggsave(paste0(results_wd, 'long_deviance/SKJ/modL_sbest_uncounted_sets_flgs_nowts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
+p5 <- plot(ggpredict(mod_syearflag_wts, terms = "yy")) + ggtitle('mod_syearflag_wts.pdf') + theme_bw()
+#ggsave(paste0(results_wd, 'long_deviance/SKJ/modM_sbest_uncounted_sets_flgs_logcpuewts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
+p6 <- plot(ggpredict(mod_syearflag_FS, terms = "yy")) + ggtitle('mod_syearflag_FS') + theme_bw()
+#ggsave(paste0(results_wd, 'long_deviance/SKJ/modN_sbest_uncounted_FSsets_flgs_nowts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
+p7 <- plot(ggpredict(mod_syearflag_logbk, terms = "yy")) + ggtitle('mod_syearflag_logbk') + theme_bw()
+#ggsave(paste0(results_wd, 'long_deviance/SKJ/modO_logbook_sets_flgs_nowts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
 
-
-plot(p6) + ggtitle('mod_syearflag_wts.pdf') + theme_bw()
-ggsave(paste0(results_wd, 'long_deviance/SKJ/modM_sbest_uncounted_sets_flgs_logcpuewts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
-plot(p7) + ggtitle('mod_syearflag_FS') + theme_bw()
-ggsave(paste0(results_wd, 'long_deviance/SKJ/modN_sbest_uncounted_FSsets_flgs_nowts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
-plot(p8) + ggtitle('mod_syearflag_logbk') + theme_bw()
-ggsave(paste0(results_wd, 'long_deviance/SKJ/modO_logbook_sets_flgs_nowts_lond_s(yy_flag)_intx/yr_effect_plot.pdf'))
-
-
+library(patchwork)
+p1 + p2 + p3 + p4 + p5 +p6 + p7
 
 mean_lond_by_year <- df |>
   group_by(yy) %>%
@@ -1498,6 +915,214 @@ ggsave(paste0(results_wd, 'long_deviance/SKJ/modL_sbest_uncounted_sets_flgs_nowt
 
 ggsave('residuals.ONI.by.year.flag.pdf')
 
+##############################################
+# OLD MODELS ----
+
+# 7.1 SBEST uncounted all lond model ----
+
+load(file = "2025_analyses/data/long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata")
+head(sbest_dat3)
+
+df <- sbest_dat3 |>
+  #mutate(SKJ_log = log(SKJ + 1)) |>
+  dplyr::filter(!(flag %in% c('FR', 'EP', 'VN', 'PA')))  |>
+  droplevels() |>
+  mutate(yy = as.factor(yy))
+
+fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
+
+mod_nm <- paste0('/modA_sbest_uncounted_sets_all_cpuelogwts_lond')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = Gamma(link = "log"), #Gamma(link = "log")
+  weights = df$cpue_log,
+  method = "REML")
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
+
+# 7.2 SBEST uncounted free school/DW lond model ----
+
+load(file = "2025_analyses/data/long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data.Rdata")
+head(sbest_dat3)
+
+df <- sbest_dat3 |>
+  #mutate(SKJ_log = log(SKJ + 1)) |>
+  dplyr::filter(flag %in% dw_flags & set_type == 'FREE')  |>
+  droplevels() |>
+  mutate(yy = as.factor(yy))
+
+fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag  + oniF + s(latd, k=5) 
+
+mod_nm <- paste0('/modB_sbest_uncounted_sets_freedw_cpuelogwts_lond')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = Gamma(link = "log"), #Gamma(link = "log")
+  weights = df$cpue_log,
+  method = "REML")
+
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
+
+# 7.3 SBEST counted all cpue model ----
+
+load(file = "2025_analyses/data/long_deviance/PS_SBEST1_counted_1990-2023_clean_data.Rdata")
+head(sbest_dat2)
+
+df <- sbest_dat2 |>
+  dplyr::filter(!(flag %in% c('FR', 'EP', 'VN', 'PA')) & !is.infinite(cpue))  |>
+  droplevels() |>
+  mutate(sets_log = log(sets + 1), stdeff_log = log(stdeff + 1)) |>
+  dplyr::filter(sets >= 1) |>
+  mutate(yy = as.factor(yy))
+
+fn <- cpue_log ~ yy + s(mm, k = 3, bs ="cc") + flag  + set_type + oniF + s(latd, k=5) + s(lond, by = yy)
+
+mod_nm <- paste0('/modC_sbest_counted_sets_all_stdeffwts_cpue')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = gaussian(link = "identity"), #Gamma(link = "log")
+  weights = df$stdeff_log,
+  method = "REML")
+
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
+
+# 7.4 SBEST counted FREE/DW subset cpue model ----
+
+load(file = "2025_analyses/data/long_deviance/PS_SBEST1_counted_1990-2023_clean_data.Rdata")
+head(sbest_dat2)
+
+df <- sbest_dat2 |>
+  dplyr::filter(flag %in% dw_flags & set_type == 'FREE'& !is.infinite(cpue))  |>
+  droplevels() |>
+  mutate(sets_log = log(sets + 1), stdeff_log = log(stdeff + 1)) |>
+  dplyr::filter(sets >= 1) |>
+  mutate(yy = as.factor(yy))
+
+fn <- cpue_log ~ yy + s(mm, k = 3, bs ="cc") + flag  + oniF + s(latd, k=5) + s(lond, by = yy)
+
+mod_nm <- paste0('/modD_sbest_counted_sets_freedw_stdeffwts_cpue')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = gaussian(link = "identity"), #Gamma(link = "log")
+  weights = df$stdeff_log,
+  method = "REML")
+
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
+
+# 7.5 logbook all lond model ----
+
+load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
+head(logps_dat2)
+
+df <- logps_dat2  |>
+  #mutate(SKJ_log = log(SKJ + 1)) |>
+  dplyr::filter(!(flag %in% c('FJ')))  |>
+  droplevels() |>
+  mutate(yy = as.factor(yy))
+
+fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) 
+
+mod_nm <- paste0('/modE_logbk_sets_all_catchlogwts_lond')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = Gamma(link = "log"), #Gamma(link = "log")
+  weights = df$SKJ_log,
+  method = "REML")
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
+
+# 7.6 logbook DW/free lond model ----
+
+load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
+head(logps_dat2)
+
+df <- logps_dat2  |>
+  #mutate(SKJ_log = log(SKJ + 1)) |>
+  dplyr::filter(flag %in% dw_flags & set_type == 'FREE')  |>
+  droplevels() |>
+  mutate(yy = as.factor(yy))
+
+fn <- lond ~ yy + s(mm, k = 3, bs ="cc") + flag + oniF + s(latd, k=5) 
+
+mod_nm <- paste0('/modF_logbk_sets_freedw_catchlogwts_lond')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = Gamma(link = "log"), #Gamma(link = "log")
+  weights = df$SKJ_log,
+  method = "REML")
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
+
+# 7.7 logbook all sets cpue model ----
+
+load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
+head(logps_dat2)
+
+df <- logps_dat2  |>
+  #mutate(SKJ_log = log(SKJ + 1)) |>
+  dplyr::filter(!(flag %in% c('FJ')))  |>
+  droplevels() |>
+  mutate(yy = as.factor(yy))
+
+fn <- SKJ_log ~ yy + s(mm, k = 3, bs ="cc") + flag + set_type + oniF + s(latd, k=5) + s(lond, by = yy)
+
+mod_nm <- paste0('/modG_logbk_sets_all_nowts_catch')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = gaussian(link = "identity"),  #Gamma(link = "log")
+  #weights = df$SKJ_log,
+  method = "REML")
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
+
+# 7.8 logbook free/dw sets cpue model ----
+
+load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
+head(logps_dat2)
+
+load( file = "2025_analyses/data/long_deviance/PS_logbook_1990-2023_clean_data.Rdata")
+head(logps_dat2)
+
+df <- logps_dat2  |>
+  #mutate(SKJ_log = log(SKJ + 1)) |>
+  dplyr::filter(!(flag %in% c('FJ')))  |>
+  droplevels() |>
+  mutate(yy = as.factor(yy))
+
+df <- logps_dat2  |>
+  #mutate(SKJ_log = log(SKJ + 1)) |>
+  dplyr::filter(flag %in% dw_flags & set_type == 'FREE')  |>
+  droplevels() |>
+  mutate(yy = as.factor(yy))
+
+fn <- SKJ_log ~ yy + s(mm, k = 3, bs ="cc") + flag + oniF + s(latd, k=5) + s(lond, by = yy)
+
+mod_nm <- paste0('/modH_logbk_sets_dwfree_nowts_catch')
+dir.create(paste0(mod.dir,sp, mod_nm), recursive = TRUE)
+
+mod <- bam(
+  fn, 
+  data = df,
+  family = gaussian(link = "identity"),  #Gamma(link = "log")
+  #weights = df$SKJ_log,
+  method = "REML")
+saveRDS(mod, file = paste0(mod.dir,sp, mod_nm, mod_nm, '_model.Rdata'))
 
 ##########################################################################
 ######################old##############################################

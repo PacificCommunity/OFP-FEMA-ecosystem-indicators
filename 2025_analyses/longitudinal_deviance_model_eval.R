@@ -60,7 +60,7 @@ mod_files_all <- data.frame(path = list.files(path = mod.dir,
          folder  = paste0(mod.dir, sp_code, '/', nm, '/'))
 
 # Filter to model(s) of interest
-mod_files <- mod_files_all |> filter(str_detect(mod, 'modI|modJ|modK|modL'))
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modI|modJ|modK|modL|modM|modN|modO'))
 
 # 3. Model evaluation loop ----
 
@@ -141,10 +141,10 @@ for(i in 2:nrow(mod_files)) { #nrow(mods)
   # if(str_detect(mod.resp, 'lond')) {
   # hist_mn <- mean(fx.prd[[1]]$est[fx.prd[[1]]$yy %in% c(1995:2005) & fx.prd[[1]]$fx.term == 'yy'])
   # 
-  # p <- 
+  # p <-
   #   fx.prd[[1]] |>
   #   dplyr::filter(fx.term == 'yy') |>
-  #   mutate(hist_period = ifelse(yy %in% c(1995:2005), 1, 0)) |>
+  #   mutate(hist_period = ifelse(yy %in% 1995:2005, 1, 0)) |>
   #   ggplot() +
   #   aes(as.numeric(as.character(yy)), est, ymin = lx, ymax = ux) +
   #   geom_pointrange(aes(col = as.factor(hist_period))) +
@@ -162,6 +162,238 @@ for(i in 2:nrow(mod_files)) { #nrow(mods)
   # ggsave(p, file = paste0(mod.fld,'yreffect_lond_plot.png'))
   # }
 }
+
+# 4. Combined eval plots -----
+
+# 4.1 Model summary table ----
+mod_files_all <- data.frame(path = list.files(path = mod.dir,
+                                              #pattern = "^mod[0-9]+_dat", 
+                                              pattern = "_model", 
+                                              full.names = TRUE, recursive = T)) |>
+  mutate(filename = basename(path), mod = str_extract(filename, "^mod[^_]*"),
+         sp_code = str_match(path, "/(SKJ|BET|YFT)/")[, 2],
+         nm = str_extract(filename, ".*(?=_model\\.Rdata)"),
+         folder  = paste0(mod.dir, sp_code, '/', nm, '/'))
+
+# Filter to model(s) of interest
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modI|modJ|modK|modL|modM|modN|modO'))
+
+eval_tbl <- tibble()
+
+# Function to extract various metrics
+extract_model_info <- function(model) {
+  s <- summary(model)
+  tibble::tibble(AIC = AIC(model),
+    BIC = BIC(model), DevianceExplained = s$dev.expl * 100,
+    AdjR2 = s$r.sq, EDF_total = sum(s$s.table[, "edf"]),
+    Residual_DF = model$df.residual)
+}
+
+# Loop through each model and extract summary stats and rbind to eval df
+for(i in 1:nrow(mod_files)) { 
+  
+  # Define model params and load model
+  mod.fld <- mod_files$folder[i]
+  sp <- mod_files$sp_code[i]
+  nm <- str_extract(mod_files$filename[i], ".*(?=_model\\.Rdata)")
+  model <- readRDS(mod_files$path[i])
+  
+  d <- extract_model_info(model) %>% 
+    mutate(nm = nm, mod = mod_files$mod[i])
+  
+  eval_tbl <- bind_rows(eval_tbl, d)
+}
+
+# Model summary table
+library(flextable)
+tbl <- 
+  eval_tbl |>
+  dplyr::select(Model = mod, Name = nm, df = EDF_total, AIC, BIC, Deviance = DevianceExplained, Adj_R2 = AdjR2) |>
+  mutate(df = round(df, 2), AIC = round(AIC, 0), BIC = round(BIC, 0), Deviance = round(Deviance, 1),
+         Adj_R2 = round(Adj_R2, 2),
+         mod_lbl = c('modA', 'modB', 'modC', 'modD', 'modE', 'modF', 'modG'),
+         mod_lbl2 = c('Linear', 'Factor', 'Year:flag ind smooth', 'Year:flag common smooth', 
+                      'modD logcpue wts', 'modD unassoc only',
+                      'modD logbook data')) |>
+  dplyr::select(-c(Model, Name)) |>
+  dplyr::select(Model = mod_lbl, Name = mod_lbl2, df, AIC, BIC, Deviance, Adj_R2) |>
+  flextable() |>
+  bold(part = "header") |>            # Bold all column headers
+  bold(j = 1, part = "body")  |>
+  bg(bg = "white", part = "all") 
+tbl
+
+save_as_image(tbl, paste0(results_wd,'long_deviance/figs/model_eval_table2.png'), 
+              width = 6, height = 6, units = 'in',  res = 100)
+
+# 4.2 Variable response plots for preferred model ----
+
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modL'))
+
+mod.fld <- mod_files$folder
+sp <- mod_files$sp_code
+nm <- str_extract(mod_files$filename, ".*(?=_model\\.Rdata)")
+mod <- readRDS(mod_files$path)
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+
+preds <- as.data.frame(ggpredict(mod, terms = c("yy", "flag"))) |>
+  mutate(bin = ifelse(group %in% c('KI', 'KR', 'TW', 'US', 'VU'), 'DW', 'PICT')) 
+mn_lond <- mean(sbest_dat3$lond, na.rm = T)
+mn_londyy <- sbest_dat3 |>
+  group_by(yy) |>
+  summarise(mn_lond = mean(lond, na.rm = T))
+
+p1 <- 
+  ggplot(preds, aes(x = x, y = predicted, color = group)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2, color = NA) +
+  labs(x = 'Year', y = 'Predicted longitude', fill = 'Flag', color = 'Flag', title = '') +
+  scale_fill_brewer(palette = 'Paired') +
+  scale_color_brewer(palette = 'Paired') +
+  geom_hline(yintercept = mn_lond, linetype = 'dashed') +
+  #geom_point(data = mn_londyy, aes(x = yy, y = mn_lond), col = 'black') +
+  facet_wrap(~bin) +
+  gg.theme +
+  theme(aspect.ratio = 1, strip.text = element_blank(), legend.position = 'bottom')
+p1
+ggsave(p1, file = paste0(results_wd, 'long_deviance/figs/modL_flag_yy_smooths_plot.png'))
+
+# preds <- ggpredict(mod, terms = c("yy", "flag")) 
+# p1 <- 
+#   ggpredict(mod, terms = "yy") |>
+#   plot() +
+#   gg.theme +
+#   labs(x = 'Year', y = '', title = '') +
+#   ylim(150,170)
+
+p2 <- 
+  ggpredict(mod, terms = "set_type") |>
+  plot() + 
+  gg.theme +
+  labs(x = 'Set type', y = '', title = '')+
+  ylim(150,170)
+
+p3 <- 
+  ggpredict(mod, terms = "mm") %>% 
+  plot() + 
+  gg.theme +
+  labs(x = 'Month', y = '', title = '')+
+  ylim(150,170)
+
+p4 <- 
+  ggpredict(mod, terms = "oniF") %>% 
+  plot() + 
+  gg.theme +
+  labs(x = 'ENSO', y = '', title = '')+
+  ylim(150,170)
+
+p5 <- 
+  ggpredict(mod, terms = "flag") |>
+  plot() +
+  gg.theme +
+  labs(x = 'Flag', y = '', title = '')+
+  ylim(150,170)
+
+p1+p2+p3+p4+
+  plot_layout(ncol = 2)
+
+combined <- (p2 + p3 + p4) + plot_layout(ncol = 2)
+
+library(cowplot)
+p <- 
+  ggdraw() +
+  draw_plot(combined) +
+  draw_label("Predicted Longitude", x = 0.02, y = 0.5, angle = 90, vjust = 1, size = 12, fontface = 'bold')
+p
+ggsave(p, file = paste0(results_wd, 'long_deviance/figs/modL_var_response_plot2.png'))
+
+# 4.3 standardised vs standardised plot for preferred model ----
+
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modL'))
+
+# mod.fld <- mod_files$folder
+# sp <- mod_files$sp_code
+# nm <- str_extract(mod_files$filename, ".*(?=_model\\.Rdata)")
+mod <- readRDS(mod_files$path)
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+
+preds <- as.data.frame(ggpredict(mod, terms = c("yy")))
+mn_lond <- mean(sbest_dat3$lond, na.rm = T)
+mn_londyy <- sbest_dat3 |>
+  group_by(yy) |>
+  summarise(mn_lond = mean(lond, na.rm = T))
+
+p <- 
+  ggplot(preds, aes(x = x, y = predicted)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high), alpha = 0.2, color = NA) +
+  labs(x = 'Year', y = 'Predicted longitude', fill = 'Flag', color = 'Flag', title = '') +
+  geom_hline(yintercept = mn_lond, linetype = 'dashed') +
+  geom_line(data = mn_londyy, aes(x = yy, y = mn_lond), col = 'black') +
+  gg.theme 
+p
+ggsave(p, file = paste0(results_wd, 'long_deviance/figs/modL_stand_vs_unstand.png'))
+
+# 4.4 COG vs preferred omdel year effect plot
+
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modL'))
+
+# mod.fld <- mod_files$folder
+# sp <- mod_files$sp_code
+# nm <- str_extract(mod_files$filename, ".*(?=_model\\.Rdata)")
+mod <- readRDS(mod_files$path)
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+
+preds <- as.data.frame(ggpredict(mod, terms = c("yy"))) |>
+  dplyr::select(yy = x, est = predicted, ux = conf.low, hx = conf.high) |>
+  mutate(index = 'model')
+
+mn_lond <- mean(sbest_dat3$lond, na.rm = T)
+mn_londyy <- sbest_dat3 |>
+  group_by(yy) |>
+  summarise(mn_lond = mean(lond, na.rm = T)) |>
+  dplyr::select(yy, est = mn_lond) |>
+  mutate(index = 'unstandardised')
+
+# Load in effort and catch COG plus model dfs from above
+load(paste0(data_wd, 'catch/catch_seine_COGs.Rdata'))
+head(PS_catch_COGs)
+
+load(paste0(data_wd, 'effort/effort_seine_COGs.Rdata'))
+head(s_eff_COGs)
+
+# catch COG df
+tmp1 <- PS_catch_COGs |>
+  ungroup() |>  
+  dplyr::filter(sp_code == 'SKJ' & set_type == 'all') |>
+  mutate(index = 'COG_catch', yy = as.numeric(as.character(yy))) |>
+  dplyr::select(c(yy, est = lon, index))
+
+# effort COG df
+tmp2 <-
+  s_eff_COGs |>
+  ungroup() |>  
+  dplyr::filter(set_type == 'all') |>
+  mutate(index = 'COG_effort', yy = as.numeric(as.character(yy))) |>
+  dplyr::select(c(yy, est = lon, index))
+
+preds2 <- bind_rows(preds, tmp1, tmp2, mn_londyy) |>
+  mutate(index = factor(index, levels = c('model', 'unstandardised', 'COG_catch', 'COG_effort')))
+
+library(RColorBrewer)
+pal <- c('black', brewer.pal(3, 'Set1'))
+p <- 
+  ggplot(preds2, aes(x = yy, y = est, col = index)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = ux, ymax = hx, group = index), alpha = 0.2, fill = 'grey50', col = NA) +
+  labs(x = 'Year', y = 'Predicted longitude', color = 'Index', title = '') +
+  geom_hline(yintercept = mn_lond, linetype = 'dashed') +
+  scale_color_manual(values = pal) +
+  gg.theme +
+  theme(legend.position = 'bottom') 
+p
+ggsave(p, file = paste0(results_wd, 'long_deviance/figs/modL_yy_indices_combined.png'))
+
 
 # 4. Combined eval plots ----
 # Here, we read in eval data for models and combine them to plot, explore
@@ -222,7 +454,7 @@ mod_files_lond <- data.frame(path = list.files(path = mod.dir,
          sp_code = str_match(path, "/(SKJ|BET|YFT)/")[, 2],
          nm = str_extract(filename, ".*(?=_fxpreds\\.Rdata)"),
          folder  = paste0(mod.dir, sp_code, '/', nm, '/')) |>
-  dplyr::filter(str_detect(mod, 'modA|modB|modE|modF'))
+  dplyr::filter(str_detect(mod, 'modI|modJ|modK|modL|modM|modN|modO'))
 
 lond_df <- tibble() 
 
@@ -232,12 +464,13 @@ for(i in 1:nrow(mod_files_lond)) {
   
   d <- as.data.frame(fx.prd[[1]]) |>
     mutate(nm = mod_files_lond$nm[i],
-           mod = mod_files_lond$mod[i])
+           mod = mod_files_lond$mod[i],
+           yy = as.numeric(as.character(yy)))
   
   lond_df <- bind_rows(lond_df, d)
 }
 
-hist_mn1 <- mean(intrx_df$est[intrx_df$yy %in% c(1995:2005)])
+#hist_mn1 <- mean(intrx_df$est[intrx_df$yy %in% c(1995:2005)])
 hist_mn2 <- mean(lond_df$est[lond_df$yy %in% c(1995:2005)])
 
 p <-
@@ -246,11 +479,11 @@ p <-
   #mutate(hist_bin = as.factor(ifelse(yy %in% c(1995:2005),1,0))) |>
   ggplot() +
   aes(x = as.numeric(as.character(yy)), y = est, col = mod) +
-  geom_pointrange(aes(ymin = lx, ymax = ux)) +
+  #geom_pointrange(aes(ymin = lx, ymax = ux)) +
   scale_color_brewer(palette = 'Set1') +
   geom_line() +
   geom_hline(yintercept = hist_mn2, linetype = 'dashed') +
-  labs(x = "Year",y = "Weighted Mean Longitude") +
+  labs(x = "Year",y = "Predicted longitude", col = 'Model') +
   gg.theme +
   theme(legend.position = 'bottom')
 p
@@ -289,7 +522,8 @@ mod_files_all <- data.frame(path = list.files(path = mod.dir,
          folder  = paste0(mod.dir, sp_code, '/', nm, '/'))
 
 # Filter to model(s) of interest
-mod_files <- mod_files_all |> filter(str_detect(mod, "^mod[A-Za-z]$"))
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modI|modJ|modK|modL|modM|modN|modO'))
+
 
 eval_tbl <- tibble()
 
@@ -327,8 +561,10 @@ tbl <-
   dplyr::select(Model = mod, Name = nm, df = EDF_total, AIC, BIC, Deviance = DevianceExplained, Adj_R2 = AdjR2) |>
   mutate(df = round(df, 2), AIC = round(AIC, 0), BIC = round(BIC, 0), Deviance = round(Deviance, 1),
          Adj_R2 = round(Adj_R2, 2),
-         mod_lbl = c('modA', 'modB', 'modC', 'modD'),
-         mod_lbl2 = c('Linear', 'Factor', 'Year:flag ind smooth', 'Year:flag common smooth')) |>
+         mod_lbl = c('modA', 'modB', 'modC', 'modD', 'modE', 'modF', 'modG'),
+         mod_lbl2 = c('Linear', 'Factor', 'Year:flag ind smooth', 'Year:flag common smooth', 
+                      'Year:flag common smooth wts', 'Year:flag common smooth FS',
+                      'Year:flag common smooth logbk')) |>
   dplyr::select(-c(Model, Name)) |>
   dplyr::select(Model = mod_lbl, Name = mod_lbl2, df, AIC, BIC, Deviance, Adj_R2) |>
   flextable() |>
