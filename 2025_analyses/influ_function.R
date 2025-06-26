@@ -123,7 +123,7 @@
 
 inds <- compute_influence_indices(mod, 'yy')
 
-inds |>
+indices |>
   pivot_longer(-c(level, unstan, stan, stanLower, stanUpper), names_to = 'var', values_to = 'val') |>
   ggplot() +
   aes(level, val, col = var, group = var) +
@@ -193,7 +193,7 @@ compute_influence_indices <- function(mod, focus_term) {
     term <- terms_vec[termCount]
     rhs_terms <- paste(terms_vec[1:termCount], collapse = " + ")
     new_formula <- as.formula(paste(response_name, "~", rhs_terms))
-    model_update <- update(mod, formula = new_formula)
+    model_update <- update(mod, formula = new_formula, data = mod$model)
     
     updated_factor <- factor(model_update$model[[focus_term]], levels = focus_levels)
     effect_index <- tapply(fitted(model_update), updated_factor, mean)
