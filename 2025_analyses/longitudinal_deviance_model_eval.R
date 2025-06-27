@@ -13,6 +13,7 @@ library(patchwork)
 library(mgcv)
 library(gratia)
 library(sp)
+library(ggeffects)
 #library(RODBC)
 #library(sdmTMB)
 
@@ -440,6 +441,86 @@ p
 ggsave(p, file = paste0(path = results_wd,'long_deviance/figs/yreffect_allmods_combined_lond_yrlon_plot.png'), 
        width = 6, height = 6, units = 'in',  dpi = 100)
 
+# 4.6 Longitude map ----
+library(ggeffects)
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modL'))
+
+mod <- readRDS(mod_files$path)
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+
+preds <- as.data.frame(ggpredict(mod, terms = c("yy"))) |>
+  mutate(y_val = seq(from = 10, to = -10, length.out = 34))
+
+mn_lond <- mean(sbest_dat3$lond, na.rm = T)
+mn_londyy <- sbest_dat3 |>
+  group_by(yy) |>
+  summarise(mn_lond = mean(lond, na.rm = T))
+
+preds |> 
+  ggplot() +
+  aes(y = y_val, x = predicted, col = x) +
+  geom_errorbar(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_point(stroke = 1, shape = 21, size = 3, col = 'black') +
+  geom_path() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(120, 180), ylim = c(-10, 10)) +
+  scale_color_distiller(palette = 'Spectral') +
+  geom_vline(xintercept = mn_lond, linetype = 'dashed') +
+  geom_text(data = preds %>% filter(x %in% c(1990, 2000, 2010, 2020, 2023)),
+            aes(label = x), color = "black", size = 3, vjust = -0.5) +
+  labs(x = 'Longitude', y = 'Latitude', col = 'Year') +
+  gg.theme +
+  theme(legend.position = 'bottom')
+
+p <- 
+preds |> 
+  ggplot() +
+  aes(y = 0, x = predicted, col = x) +
+  #geom_errorbar(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_point(stroke = 1, size = 2) +
+  geom_path() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(120, 180), ylim = c(-10, 10)) +
+  scale_color_distiller(palette = 'Spectral') +
+  geom_vline(xintercept = mn_lond, linetype = 'dashed') +
+  geom_text(data = preds %>% filter(x %in% c(1990, 2023)),
+            aes(label = x), color = "black", size = 3, vjust = -0.5) +
+  labs(x = 'Longitude', y = 'Latitude', col = 'Year') +
+  gg.theme +
+  theme(legend.position = 'bottom')
+p
+ggsave(p, file = paste0(path = results_wd,'long_deviance/figs/yreffect_map_index.png'), 
+       width = 6, height = 6, units = 'in',  dpi = 100)
+
+preds2 <- as.data.frame(ggpredict(mod, terms = c("yy", "flag"))) |>
+  dplyr::rename(yy = x, flag = group) |>
+  mutate(flag_bin = ifelse(flag %in% c('KI', 'KR', 'TW', 'US', 'VU'), 'DW', 'PICT'),
+         facet_label = interaction(flag_bin, flag, sep = ": "),
+         flag2 = factor(flag, levels = c('KI', 'FM', 'KR', 'JP','TW', 'PG', 'US', 'PH', 'VU' , 'SB')))
+
+p <- 
+preds2 |> 
+  droplevels() |>
+  ggplot() +
+  aes(y = 0, x = predicted, col = yy, group = flag) +
+  #geom_errorbar(aes(xmin = conf.low, xmax = conf.high)) +
+  geom_point(stroke = 1, size = 2) +
+  geom_path() +
+  facet_wrap(~flag2, ncol = 2) +
+  #facet_grid(cols = vars(flag_bin), rows = vars(flag)) +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(120, 200), ylim = c(-10, 10)) +
+  scale_color_distiller(palette = 'Spectral') +
+  geom_vline(xintercept = mn_lond, linetype = 'dashed') +
+  geom_text(data = preds2 %>% filter(yy %in% c(1990, 2023)),
+            aes(label = yy), color = "black", size = 3, vjust = -0.5) +
+  labs(x = 'Longitude', y = 'Latitude', col = 'Year') +
+  gg.theme +
+  theme(legend.position = 'bottom')
+p
+ggsave(p, file = paste0(path = results_wd,'long_deviance/figs/yreffect_map_allflags.png'), 
+       width = 6, height = 10, units = 'in',  dpi = 100)
+
 #########################################
 # Compare with Thom's sdmTMB ----
 
@@ -566,3 +647,101 @@ tbl
 save_as_image(tbl, path = paste0(results_wd,'long_deviance/figs/variable_importance_modL_tbl.png'), 
               width = 6, height = 6, units = 'in',  res = 100)
 
+# Indicator flag plots ----
+
+# Load in cleaned data
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+
+head(sbest_dat3)
+
+ind_flags <- c('KR', 'TW', 'PH', 'SB', 'JP')
+
+#plot_list <- vector("list", length(ind_flags))
+
+ind_df <- sbest_dat3 |>
+  dplyr::filter(flag %in% c('KR', 'TW', 'PH', 'SB', 'JP')) |>
+  group_by(flag, yy) |>
+  summarise(sets = n(), mn_cpue = mean(cpue, na.rm = T), catch = sum(cpue, na.rm = T)/1000,
+            lond_mn = mean(lond, na.rm = T)) |>
+  pivot_longer(-c(yy, flag), names_to = 'var', values_to = 'val') 
+
+p <- 
+ind_df |>
+  ggplot() +
+  aes(yy, val, col = var) +
+  geom_line() +
+  gg.theme +
+  labs(x = 'Year', y = 'Value', title = 'Indicator flags') +
+  scale_color_brewer(palette = 'Set1') +
+  facet_wrap(~flag+var, scales = 'free_y', ncol = 4, nrow = 5) +
+  theme(aspect.ratio = 1, legend.position = 'none') 
+p
+ggsave(p, file = paste0(path = results_wd,'long_deviance/figs/indicator_plots_5flags.png'), 
+       width = 6, height = 10, units = 'in',  dpi = 100)
+
+# Single flag indicator eg ----
+
+# Load in model
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modL'))
+mod <- readRDS(mod_files$path)
+
+ind_kr <- as.data.frame(ggpredict(mod, terms = c("yy", "flag"))) |>
+  dplyr::select(yy = x, val = predicted, flag = group) |>
+  dplyr::filter(flag == 'PH') |>
+  mutate(var = 'lond_mod') |>
+  bind_rows(ind_df[ind_df$flag == 'PH',]) 
+
+library(RColorBrewer)
+pal <- brewer.pal(5, 'Set1')
+
+p1 <- 
+  ind_kr |>
+  dplyr::filter(var == 'catch') |>
+  ggplot() +
+  aes(yy, val, col = var) +
+  geom_line() +
+  gg.theme +
+  geom_hline(yintercept = mean(ind_kr$val[ind_kr$var=='catch' & ind_kr$yy %in% c(1995:2005)]), linetype = 'dashed') +
+  scale_color_manual(values = pal[1]) +
+  labs(x = '', y = 'Catch (x1000t)', title = "Indicators - PH") +
+  theme(aspect.ratio = 1, legend.position = 'none') 
+p2 <- 
+  ind_kr |>
+  dplyr::filter(var == 'sets') |>
+  ggplot() +
+  aes(yy, val, col = var) +
+  geom_line() +
+  gg.theme +
+  geom_hline(yintercept = mean(ind_kr$val[ind_kr$var=='sets' & ind_kr$yy %in% c(1995:2005)]), linetype = 'dashed') +
+  scale_color_manual(values = pal[2]) +
+  labs(x = '', y = 'Sets') +
+  theme(aspect.ratio = 1, legend.position = 'none') 
+p3 <- 
+  ind_kr |>
+  dplyr::filter(var == 'mn_cpue') |>
+  ggplot() +
+  aes(yy, val, col = var) +
+  geom_line() +
+  gg.theme +
+  geom_hline(yintercept = mean(ind_kr$val[ind_kr$var=='mn_cpue' & ind_kr$yy %in% c(1995:2005)]), linetype = 'dashed') +
+  scale_color_manual(values = pal[3]) +
+  labs(x = '', y = 'CPUE') +
+  theme(aspect.ratio = 1, legend.position = 'none') 
+p4 <- 
+  ind_kr |>
+  dplyr::filter(!(var %in% c('catch', 'sets', 'mn_cpue'))) |>
+  ggplot() +
+  aes(yy, val, col = var) +
+  geom_line() +
+  gg.theme +
+  geom_hline(yintercept = mean(ind_kr$val[ind_kr$var=='lond_mn' & ind_kr$yy %in% c(1995:2005)]), linetype = 'dashed') +
+  scale_color_manual(values = pal[c(4,5)]) +
+  labs(x = '', y = 'Longitude') +
+  theme(aspect.ratio = 1, legend.position = 'none') 
+
+p <- (p1+p2)/(p3+p4) 
+p
+ggsave(p, file = paste0(path = results_wd,'long_deviance/figs/indicator_plots_PH.png'), 
+       width = 6, height = 6, units = 'in',  dpi = 100)
+
+# Digby, Genia, Gill, Horwill, Rob simmons, Slipper, Faingaa

@@ -214,10 +214,10 @@ compute_influence_indices <- function(mod, focus_term) {
 
 
 base_cols <- 5
-step_cols <- names(indices)[(base_cols + 1):ncol(indices)]
+step_cols <- names(inds)[(base_cols + 1):ncol(inds)]
 
 # Convert to long format for ggplot
-long_df <- indices %>%
+long_df <- inds %>%
   select(level, all_of(step_cols)) %>%
   pivot_longer(-level, names_to = "Model", values_to = "Index") %>%
   mutate(level = as.factor(level),
