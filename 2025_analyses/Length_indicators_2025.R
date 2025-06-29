@@ -3,7 +3,7 @@
 ######################################################################
 
 ## Created on: 07/07/23
-## Latest update: 15/1/2025
+## Latest update: 19/6/2025
 ## Created by: Jed Macdonald
 ## Modified by:: Nick Hill
 
@@ -15,13 +15,15 @@
 ## Indicator 2: Mean length across all gears
 
 ## Key changes from 2021: 
-## 1) Addition of new data from 1990 to 2022 inclusive.
+## 1) Addition of new data from 1990 to 202 inclusive.
 ## 2) Use new SQL queries for L-W data adapted from the 2023 BET & YFT L-W work (in 'P:\OFPEMA\Project 90\Data\2023 data\BET.YFT_assessment_LW), with SKJ data added. 
 ## 3) Use new SQL queries for length data adapted from the SKJ length frquency/warm pool size analysis (in 'P:\OFPEMA\WCPFC\SC19\Ecosystem indicators\SKJ_lengthfreq').
 ## 2) Begin SKJ K_rel time series at 1998, and then continue from 2010 to 2022, as data are few in other years.
 
 ## Key changes for 2025:
 ## Reduction in number of indicators and the type for new 'state of climate' report
+## Addition of length proportion indicators
+## further exploration of LW indicators
 
 # 1. Preamble ----
 #library(RODBC) 
@@ -998,6 +1000,15 @@ LFs <-
   dplyr::filter(WCP_CA %in% c(1, 2))  |>
   select(-WCP_CA)
 
+# Check the data - binned to 2cm
+LFs |>
+  dplyr::filter((sp_code == 'SKJ' & gr %in% c('L', 'S')) | (sp_code %in% c('BET', 'YFT') & gr %in% c('L')))  |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 1) +
+  facet_wrap(~sp_code, scales = 'free')
+
 # Load in len-wt data that has all outliers removed
 #save(LFs, file = paste0(data_wd, "biology/bio_len_freqs_clean.Rdata"))
 
@@ -1024,7 +1035,7 @@ summ_stats |>
   geom_bar(stat = 'identity', position = 'stack') +
   scale_fill_brewer(palette = 'Set1') +
   labs(x = 'Year', y = 'Length samples (x1000)', fill = 'Species',
-       title = 'Longline samples taken by year for tunas') +
+       title = 'Number of length samples taken by year and species') +
   gg.theme
 p
 #ggsave(p, file = paste0(results_wd, 'biology/biology_lens_sample_sizes.png'),
@@ -1068,8 +1079,8 @@ mns23 <- LFs |>
   summarise(mn_len = round(mean(len, na.rm = T), 1)) |>
   mutate(y = c(200, 95, 200)*0.84)
 
-L50s <-
-  data.frame(sp_code = c('BET', 'SKJ', 'YFT'), L50 = c(103,55,105), y = c(200, 95, 200)) 
+L50s <- data.frame(sp_code = c('BET', 'SKJ', 'YFT'), 
+                   L50 = c(103,55,105), y = c(200, 95, 200)) 
 
 p <- 
 LFs |>
@@ -1079,8 +1090,8 @@ LFs |>
   ggplot() +
   aes(yy, len, fill = sp_code, group = yy) +
   geom_violin() +
-  geom_hline(data = mns, aes(yintercept = mns$mn_len, group = sp_code), linetype = 'dashed', size = 1.2) +
-  geom_hline(data = L50s, aes(yintercept = L50s$L50, group = sp_code), linetype = 'dotted', size = 1.2) +
+  geom_hline(data = mns, aes(yintercept = mn_len, group = sp_code), linetype = 'dashed', size = 1.2) +
+  geom_hline(data = L50s, aes(yintercept = L50, group = sp_code), linetype = 'dotted', size = 1.2) +
   geom_point(data = summ_stats, aes(x = yy, y = mean_val), 
              color = 'black', shape = 21, fill = 'black', size = 3, inherit.aes = FALSE) +
   geom_errorbar(data = summ_stats, aes(x = yy, ymin = q25, ymax = q75), 
@@ -1137,11 +1148,10 @@ p
 ggsave(p, file = paste0(results_wd, 'biology/biology_lens_violin_plot2.png'),
        width = 8, height = 11, units = "in", dpi = 100)
 
-
 # Plot mean length by species and year
 p <- 
 LFs |>
-  dplyr::filter(gr == 'L') |>
+  dplyr::filter((sp_code == 'SKJ' & gr %in% c('L', 'S')) | (sp_code %in% c('BET', 'YFT') & gr %in% c('L'))) |>
   uncount(freq) |> 
   group_by(yy, sp_code) |>
   summarise(mn_len = mean(len, na.rm=T)) |>
@@ -1200,46 +1210,56 @@ ggsave(p, file = paste0(results_wd, 'biology/biology_mnlen_indicator3.png'),
 # the proportion of small fish < 20th % from 1990-2000
 
 library(zoo)
-pal4 <- brewer.pal(3, 'Set1')
+pal4 <- brewer.pal(4, 'Set1')
 
-p <- 
+L50s <- data.frame(sp_code = c('BET', 'SKJ', 'YFT'), 
+                   L50 = c(103,55,105), y = c(200, 95, 200)) 
+
+# Calc 3 year running mean length prop indicators
+LFs2 <- 
 LFs |>
-  dplyr::filter(gr == 'L') |>
+  dplyr::filter((sp_code == 'SKJ' & gr %in% c('L', 'S')) | (sp_code %in% c('BET', 'YFT') & gr %in% c('L'))) |>
+  left_join(L50s, by = 'sp_code') |>
   group_by(sp_code) |>
   mutate(len20 = quantile(len[yy %in% c(1990:2000)], 0.2), mn_len = mean(len[yy %in% c(1990:2000)], na.rm=T),
                      len80 = quantile(len[yy %in% c(1990:2000)], 0.8)) |>
-  group_by(sp_code, yy, len20, mn_len, len80) |>
+  group_by(sp_code, yy, len20, mn_len, len80, L50) |>
   summarise(n = n(), prop20 = sum(len < len20)/n(),
             propmn = sum(len > mn_len)/n(),
-            prop80 = sum(len > len80)/n()) |>
+            prop80 = sum(len > len80)/n(),
+            propL50 = sum(len > L50)/n()) |>
   ungroup() |>
   #dplyr::select(yy, sp_code, prop20, propmn, prop80) |>
   mutate(prop20_roll = rollmean(prop20, k = 3, fill = NA,align = "left"),
          mn_len_roll = rollmean(propmn, k = 3, fill = NA,align = "left"),
-         prop80_roll = rollmean(prop80, k = 3, fill = NA, align = "left")) |>
-  pivot_longer(-c(sp_code, yy, len20, mn_len, len80, n, prop20, propmn, prop80), names_to = 'indicator', values_to = 'val') |>
-  #left_join(labs, by = "sp_code") |>
+         prop80_roll = rollmean(prop80, k = 3, fill = NA, align = "left"),
+         propL50_roll = rollmean(propL50, k = 3, fill = NA, align = "left")) |>
+  pivot_longer(-c(sp_code, yy, len20, mn_len, len80, n, prop20, propmn, prop80, propL50, L50), 
+               names_to = 'indicator', values_to = 'val')
+
+p <- 
+  LFs2|>
+  dplyr::filter(indicator != 'propL50_roll') |>
   ggplot() +
-  aes(x = yy, y = val, col = indicator) +
+  aes(x = yy, y = val*100, col = indicator) +
   geom_line() +
   geom_point(size = 0.5) +
   facet_wrap(~sp_code, nrow = 3) +
   geom_smooth(method = "lm",se = FALSE, linetype = "dashed", linewidth = 0.5) +
   #scale_color_brewer(palette = 'Set1') + 
-  scale_color_manual(values = pal4, labels = c(">mean", "small fish", "big fish")) +
-  geom_text(aes(x = 2020, y = 0.1, label = paste0("small=", round(len20, 0), 'cm')), 
-            inherit.aes = FALSE, size = 3, color = "black", hjust = 1) +
-  geom_text(aes(x = 2020, y = 0.05, label = paste0("mean=", round(mn_len, 0), 'cm')), 
-            inherit.aes = FALSE, size = 3, color = "black", hjust = 1) +
-  geom_text(aes(x = 2020, y = 0.01, label = paste0("large=", round(len80, 0), 'cm')), 
-            inherit.aes = FALSE, size = 3, color = "black", hjust = 1) +
+  scale_color_manual(values = pal4, labels = c("% >mean fish", "% small fish", "% big fish")) +
+  geom_text(aes(x = 2020, y = 10, label = paste0("small=", round(len20, 0), 'cm')), 
+            inherit.aes = FALSE, size = 3, color = pal4[2], hjust = 1) +
+  geom_text(aes(x = 2020, y = 5, label = paste0("mean=", round(mn_len, 0), 'cm')), 
+            inherit.aes = FALSE, size = 3, color = pal4[1], hjust = 1) +
+  geom_text(aes(x = 2020, y = 1, label = paste0("large=", round(len80, 0), 'cm')), 
+            inherit.aes = FALSE, size = 3, color = pal4[3], hjust = 1) +
   coord_cartesian(ylim = c(0, NA)) +  # Set ymin to 0 while keeping ymax free
-  labs(x = 'Year', y = 'Proportion', col = 'Indicator', 
-       title = 'Length proportion indicators') +
+  labs(x = 'Year', y = 'Percentage (%)', col = 'Indicator') +
   gg.theme +
-  theme(aspect.ratio = 0.3)
+  theme(aspect.ratio = 0.4, legend.position = 'bottom')
 p
-ggsave(p, file = paste0(results_wd, 'biology/biology_lenprop_indicator2.png'),
+ggsave(p, file = paste0(results_wd, 'biology/biology_lenprop_indicator3.png'),
        height = 11, width = 8, units = "in", dpi = 200)
 
 # 6.6 GGridges length frequency distribution indicator----
