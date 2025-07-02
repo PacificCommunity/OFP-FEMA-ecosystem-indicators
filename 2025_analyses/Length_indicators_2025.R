@@ -1353,3 +1353,66 @@ LFs |>
 p
 ggsave(p, file = paste0(results_wd, 'biology/biology_lenridges_indicator3.png'),
        height = 4, width = 5.5, units = "in", dpi = 200)
+
+
+# Lens by oni/warm pool size exploration
+
+destfile <- paste0(data_wd, 'long_deviance/oni.data.txt')
+
+# Tidy data file
+oni_data <- read.table(destfile, header = FALSE, fill = TRUE)[-1,] |>
+  setNames(c("year", paste0('M',c(1:12)))) |>
+  dplyr::filter(year %in% c(1950:2025)) |>
+  mutate(across(starts_with("M"), as.numeric)) |>
+  pivot_longer(-year, names_to = 'month', values_to = 'oni') |>
+  mutate(month = as.numeric(str_remove(month, "M")),
+         year = as.numeric(year),
+         oniF = as.factor(ifelse(oni >= 0.5, "elnino", 
+                                 ifelse(oni <= -0.5, "lanina", "neutral")))) |>
+  dplyr::filter(oni != -99.9) |>
+  dplyr::rename(yy = year, mm = month)
+
+oni_data <- oni_data %>%
+  mutate(qtr = ceiling(mm / 3))
+
+LFs2 <- left_join(LFs, oni_data, by = c("yy", "qtr")) |>
+  dplyr::filter(sp_code == 'SKJ' & gr == 'S') |>
+  uncount(freq)
+
+library(ggridges)
+
+LFs2 |>
+  mutate(lon10 = floor(lon/10) * 10) |>
+  ggplot() +
+  aes(x = len, y = oniF, group = oniF, fill = oniF) + #after_stat(x)
+  geom_density_ridges(rel_min_height = 0.01) +
+  #scale_fill_distiller(palette = 'Blues') +
+  facet_wrap(~lon10)
+
+LFs2 |>
+  mutate(lon10 = floor(lon / 10) * 10) |>
+  ggplot(aes(x = len, fill = oniF)) +
+  geom_histogram(binwidth = 2, position = "dodge") +
+  facet_wrap(~lon10, scales = "free_y") +
+  labs(x = "Length (cm)", y = "Count", fill = "ENSO Phase") +
+  theme_minimal()
+
+LFs2 |>
+  mutate(lon10 = floor(lon / 10) * 10) |>
+  ggplot(aes(x = len, color = oniF)) +
+  geom_density() +
+  facet_wrap(~lon10) +
+  labs(x = "Length (cm)", y = "Density", fill = "ENSO Phase", color = "ENSO Phase") +
+  theme_minimal()
+
+LFs2 |>
+  dplyr::filter(lon5 >= 130 & lat5 <= 10 & lat5 >= -15) |>
+  group_by(lon5, lat5, oniF) |>
+  summarise(med_len = median(len, na.rm=T)) |>
+  ggplot() +
+  aes(lon5, lat5, fill = med_len) + 
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(110, 230), ylim = c(-20, 10)) +
+  geom_tile() +
+  scale_fill_distiller(palette = 'Spectral') +
+  facet_wrap(~oniF, ncol = 1)
