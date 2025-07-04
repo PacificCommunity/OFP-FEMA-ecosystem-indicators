@@ -60,7 +60,7 @@ mod_files_all <- data.frame(path = list.files(path = mod.dir,
          folder  = paste0(mod.dir, sp_code, '/', nm, '/'))
 
 # Filter to model(s) of interest
-mod_files <- mod_files_all |> filter(str_detect(mod, 'modI|modJ|modK|modL'))
+mod_files <- mod_files_all |> filter(str_detect(mod, 'modI|modJ|modK|modL|modM|modN|modO'))
 
 # 3. Model evaluation loop ----
 
@@ -300,7 +300,7 @@ extract_model_info <- function(model) {
     BIC = BIC(model),
     DevianceExplained = s$dev.expl * 100,
     AdjR2 = s$r.sq,
-    EDF_total = sum(s$s.table[, "edf"]),
+    EDF_total = sum(model$edf),
     Residual_DF = model$df.residual,
     GCV_UBRE = s$gcv.ubre
   )
@@ -325,10 +325,11 @@ library(flextable)
 tbl <- 
 eval_tbl |>
   dplyr::select(Model = mod, Name = nm, df = EDF_total, AIC, BIC, Deviance = DevianceExplained, Adj_R2 = AdjR2) |>
-  mutate(df = round(df, 2), AIC = round(AIC, 0), BIC = round(BIC, 0), Deviance = round(Deviance, 1),
+  mutate(df = round(df, 1), AIC = round(AIC, 0), BIC = round(BIC, 0), Deviance = round(Deviance, 1),
          Adj_R2 = round(Adj_R2, 2),
-         mod_lbl = c('modA', 'modB', 'modC', 'modD'),
-         mod_lbl2 = c('Linear', 'Factor', 'Year:flag ind smooth', 'Year:flag common smooth')) |>
+         mod_lbl = c('modA', 'modB', 'modC', 'modD', 'modE', 'modF', 'modG'),
+         mod_lbl2 = c('Linear', 'Factor', 'Year:flag ind smooth', 'Year:flag common smooth',
+                      'modD log(cpue) wts', 'modD unassoc subset', 'modD logbook data')) |>
   dplyr::select(-c(Model, Name)) |>
   dplyr::select(Model = mod_lbl, Name = mod_lbl2, df, AIC, BIC, Deviance, Adj_R2) |>
   flextable() |>
@@ -337,7 +338,7 @@ eval_tbl |>
   bg(bg = "white", part = "all") 
 tbl
 
-save_as_image(tbl, paste0(results_wd,'long_deviance/figs/model_eval_table2.png'), 
+save_as_image(tbl, paste0(results_wd,'long_deviance/figs/model_eval_table3.png'), 
               width = 6, height = 6, units = 'in',  res = 100)
 
 # 7. Combine year/lond models with raw COG ----

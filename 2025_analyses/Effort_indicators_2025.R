@@ -210,28 +210,6 @@ s_eff3 |>
   labs(x = 'Longitude', y = 'Latitude',
        fill='Effort (log sets)', title = 'Distribution of purse seine effort (all)')
 
-# 3. Centre of gravity indicator ----
-
-# COG function
-ann.cg.inert = function(dat, effort, lab){
-  cgi = c()
-  
-  for(i in 1:length(unique(dat$YY))){
-    CG = dat %>% filter(YY==unique(YY)[i]) %>% select(lon,lat,effort,YY)
-    names(CG)[3] = 'effort'
-    CG %<>% group_by(lon,lat) %>% summarize(z=sum(as.numeric(effort),na.rm=T))
-    db = db.create(x1=CG$lon, x2=CG$lat, z1=CG$z)
-    projec.define(projection="mean",db=db)
-    
-    projec.toggle(0)
-    CG = SI.cgi(db, flag.plot=F)
-    cgi = rbind(cgi, c("yy"=unique(dat$YY)[i], "CG"=CG$center,
-                       "inertia"=CG$inertia, "iso"=CG$iso))
-  }
-  cgi %<>% data.frame() %>% rename(lon=CG1, lat=CG2)
-  return(cgi)
-}
-
 # Dropping SE Asia effort
 s_eff3 |>
   ggplot() +
@@ -242,19 +220,171 @@ s_eff3 |>
   #scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
   gg.theme
 
-# 3.1 Purse seine effort COG ----
-# Calculate COG, intertia
-# Need to filter PS data? remove japane/indo fleet???
+# 3. Centre of gravity indicator ----
+library(magrittr)
+
+# Updated COG function that also pulls ellipse data
+ann.cg.inert = function(dat, effort, lab){
+  cgi = list()
+  
+  unique_years <- unique(dat$YY)
+  for(i in seq_along(unique_years)){
+    year_i <- unique_years[i]
+    
+    CG = dat %>% filter(YY == year_i) %>% select(lon, lat, effort, YY)
+    names(CG)[3] = 'effort'
+    CG %<>% group_by(lon, lat) %>% summarize(z = sum(as.numeric(effort), na.rm = TRUE), .groups = 'drop')
+    
+    db = db.create(x1 = CG$lon, x2 = CG$lat, z1 = CG$z)
+    projec.define(projection = "mean", db = db)
+    projec.toggle(0)
+    CG_result = SI.cgi(db, flag.plot = FALSE)
+    
+    # Extract ellipse parameters
+    eig_values <- CG_result$mvalue
+    eig_vectors <- CG_result$mvector
+    
+    width <- 2 * sqrt(eig_values[1])
+    height <- 2 * sqrt(eig_values[2])
+    angle <- atan2(eig_vectors[2, 1], eig_vectors[1, 1]) * 180 / pi
+    
+    # Collect results in a named vector (for rbind)
+    cgi[[i]] <- c(yy = year_i,
+      lon = CG_result$center[1], lat = CG_result$center[2],
+      inertia = CG_result$inertia, width = width,
+      height = height, angle = angle)
+  }
+  
+  # Combine into data.frame, convert types
+  cgi_df <- do.call(rbind, cgi) %>% as.data.frame(stringsAsFactors = FALSE)
+  cgi_df %<>% mutate(yy = as.integer(yy),lon = as.numeric(lon),
+    lat = as.numeric(lat), inertia = as.numeric(inertia),
+    width = as.numeric(width),height = as.numeric(height),
+    angle = as.numeric(angle))
+  
+  return(cgi_df)
+}
+
+# Function to extract ellipse area
+ellipse_area <- function(width, height) {
+  # width and height are full axes length
+  a <- width / 2
+  b <- height / 2
+  pi * a * b
+}
+
+# COG function old
+# ann.cg.inert = function(dat, effort, lab){
+#   cgi = c()
+#   
+#   for(i in 1:length(unique(dat$YY))){
+#     CG = dat %>% filter(YY==unique(YY)[i]) %>% select(lon,lat,effort,YY)
+#     names(CG)[3] = 'effort'
+#     CG %<>% group_by(lon,lat) %>% summarize(z=sum(as.numeric(effort),na.rm=T))
+#     db = db.create(x1=CG$lon, x2=CG$lat, z1=CG$z)
+#     projec.define(projection="mean",db=db)
+#     
+#     projec.toggle(0)
+#     CG = SI.cgi(db, flag.plot=F)
+#     cgi = rbind(cgi, c("yy"=unique(dat$YY)[i], "CG"=CG$center,
+#                        "inertia"=CG$inertia, "iso"=CG$iso))
+#   }
+#   cgi %<>% data.frame() %>% rename(lon=CG1, lat=CG2)
+#   return(cgi)
+# }
+
+# s_eff_COGs <- 
+#   s_eff3 |>
+#   #dplyr::filter(ez_aprx_code != 'ID' & lat >= -20 & lat <= 20) |>
+#   group_by(set_type) |>
+#   nest() |>
+#   mutate(cgi = purrr:::map(data, ~ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) |>
+#   dplyr::select(-data) |>
+#   unnest(cols = c('cgi'))
+
+# 3.1 Purse seine COG indicator ----
+# Extract COG information
 s_eff_COGs <- 
-  s_eff3 |>
-  #dplyr::filter(ez_aprx_code != 'ID' & lat >= -20 & lat <= 20) |>
-  group_by(set_type) |>
-  nest() |>
-  mutate(cgi = purrr:::map(data, ~ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) |>
-  dplyr::select(-data) |>
-  unnest(cols = c('cgi'))
+  s_eff3 %>%
+  # filter(ez_aprx_code != 'ID' & lat >= -20 & lat <= 20) %>%
+  group_by(set_type) %>%
+  nest() %>%
+  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) %>%
+  select(-data) %>%
+  unnest(cols = c(cgi)) %>%
+  mutate(
+    area_m2 = ellipse_area(width, height),
+    area_km2 = area_m2 / 1e6  # optional: convert to square kilometers
+  )
+
 save(s_eff_COGs, file = paste0(data_wd, "effort/effort_seine_COGs.Rdata"))
+#load(file = paste0(data_wd, "effort/effort_seine_COGs.Rdata"))
+
+# Extract again in projected space for area calculations
+library(sf)
+s_eff3_sf <- st_as_sf(s_eff3, coords = c("lon", "lat"), crs = 4326) # WGS84
+s_eff3_sf <- st_transform(s_eff3_sf, crs = 3857) # Web Mercator (meters)
+
+# Then extract back the projected lon/lat as x/y in meters:
+s_eff3_proj <- s_eff3_sf %>%
+  mutate(lon = st_coordinates(.)[,1],
+         lat = st_coordinates(.)[,2]) %>%
+  st_drop_geometry()
+
+s_eff_COGs_proj <- 
+  s_eff3_proj %>%
+  group_by(set_type) %>%
+  nest() %>%
+  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) %>%
+  select(-data) %>%
+  unnest(cols = c(cgi)) %>%
+  mutate(area_m2 = ellipse_area(width, height), area_km2 = area_m2 / 1e6)
+
+# 3.2 PS COG plots ----
+library(ggforce)
 load(file = paste0(data_wd, "effort/effort_seine_COGs.Rdata"))
+
+# PS COG map with ellipses
+p <- 
+s_eff_COGs |>
+  ggplot() +
+  geom_ellipse(aes(x0 = lon, y0 = lat, a = width / 2,  b = height / 2,        
+    angle = angle * pi / 180,fill = yy), alpha = 0.2, col = NA) + 
+  geom_point(aes(x = lon, y = lat, fill = yy), size = 3, shape = 21, col = 'black') +
+  geom_path(aes(x = lon, y = lat, color = yy)) +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(120, 190), ylim = c(-10, 10)) +
+  scale_color_distiller(palette = 'RdYlBu', direction = -1) +
+  scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
+  facet_wrap(~set_type, ncol = 1) +
+  labs(#title = "Center of Gravity with Ellipse of Effort Spread",
+       x = "Longitude", y = "Latitude", col = 'Year', fill = 'Year') +
+  gg.theme +
+  theme(legend.position = 'bottom', legend.text = element_text(angle = 90))
+p
+ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_map_ellipses.png'),height = 10, width = 8, units = "in", dpi = 200)
+
+# PS COG map without ellipses
+p <- 
+  s_eff_COGs |>
+  ggplot() +
+  geom_point(aes(x = lon, y = lat, fill = yy), size = 3, shape = 21, col = 'black') +
+  geom_path(aes(x = lon, y = lat, color = yy)) +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(120, 180), ylim = c(-10, 10)) +
+  scale_color_distiller(palette = 'RdYlBu', direction = -1) +
+  scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
+  geom_text(data = s_eff_COGs %>% filter(yy %in% c(1990, 2000, 2010, 2020, 2023)),
+            aes(x = lon, y = lat, label = yy), color = "black", size = 3, vjust = -0.5) +
+  facet_wrap(~set_type, ncol = 1) +
+  labs(#title = "Center of Gravity with Ellipse of Effort Spread",
+    x = "Longitude", y = "Latitude", col = 'Year', fill = 'Year') +
+  gg.theme +
+  theme(legend.position = 'bottom', legend.text = element_text(angle = 90))
+p
+ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_map.png'),height = 10, width = 8, units = "in", dpi = 200)
+
+
 
 # Extract COG means for plotting
 COG_mns <- 
@@ -265,6 +395,7 @@ COG_mns <-
                    mn_inertia = mean(inertia[set_type == 'all']),
                    mn_lat = mean(lat[set_type == 'all']))
 
+# Plot longitude COG on lineplot
 library(zoo)
 p <- 
   s_eff_COGs |>
@@ -288,8 +419,9 @@ p <-
   gg.theme +
   theme(legend.position = 'bottom')
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_COGlong_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effort_COGlong_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
+# Plot latitude COG on line plot
 p <- 
   s_eff_COGs |>
   #unnest(cols = c('cgi_ass')) |>
@@ -310,20 +442,16 @@ p <-
   gg.theme +
   theme(legend.position = 'bottom')
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_COGlat_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effort_COGlat_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
+# Plot inertia (measure of spread)
 p <- 
   s_eff_COGs |>
-  #unnest(cols = c('cgi_ass')) |>
-  #dplyr::filter(set_type == 'all') |>
   ggplot() +
   aes(yy, inertia, group = set_type, col = set_type) + #reorder(yy, desc(yy)),
   geom_line() +
   geom_point(size = 1) +
-  #scale_y_discrete(limits=rev) +
-  #coord_flip() +
   geom_smooth(method = 'lm', se=F, linetype='dashed', size = 0.1) +
-  #facet_wrap(~sp_code) +
   scale_color_brewer(palette = 'Set1') +
   geom_abline(data = COG_mns, aes(slope=0, intercept = mn_inertia), color='black') +
   labs(x = 'Year', y = 'Inertia', col = 'Set type') +
@@ -332,7 +460,31 @@ p <-
   gg.theme +
   theme(legend.position = 'bottom')
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_COGinert_PSs_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effort_COGinert_PSs_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+
+# Plot ellipse area using projected (km2) COG data
+p <- 
+  s_eff_COGs_proj |>
+  ggplot() +
+  aes(yy, area_km2/1000, group = set_type, col = set_type) + #reorder(yy, desc(yy)),
+  geom_line() +
+  geom_point(size = 1) +
+  geom_smooth(method = 'lm', se=F, linetype='dashed', size = 0.1) +
+  scale_color_brewer(palette = 'Set1') +
+  #geom_abline(data = COG_mns, aes(slope=0, intercept = mn_inertia), color='black') +
+  labs(x = 'Year', y = 'Ellipse area (x1000km2)', col = 'Set type') +
+  #scale_x_discrete(breaks = seq(min(s_eff_COGs$yy), max(s_eff_COGs$yy), by = 5)) +  # Show every 5th year
+  #ggtitle("Centre of gravity inertia of PS effort") +
+  gg.theme +
+  theme(legend.position = 'bottom')
+p
+ggsave(p, file = paste0(results_wd, 'effort/effort_COGellipse_area_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+
+
+s_eff3 |>
+  ggplot() +
+  aes(YY, lon, group = YY) + 
+  
 
 # COGs
 tmp <- 
@@ -418,6 +570,27 @@ ggsave(p, file = paste0(results_wd, 'effort/effort_COGinert_LL.png'),height = 4.
 
 # 3.3 COG maps ----
 
+# COG with uncertainty
+s_eff_COGs |>
+  #dplyr::filter(set_type == 'all') |>
+  dplyr::arrange(yy) |>
+  #dplyr::mutate(id = 1:n()) |>
+  ggplot() +
+  aes(lon, lat, fill = yy, col = yy) +
+  geom_point(aes(size = iso), stroke = 1, shape = 21, col = 'black') +
+  geom_path(aes(col = yy)) +
+  facet_wrap(~set_type, nrow = 3) +
+  geom_text(data = s_eff_COGs %>% filter(yy %in% c(1990, 2000, 2010, 2020, 2023)),
+            aes(label = yy), color = "black", size = 3, vjust = -0.5) +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(120, 180), ylim = c(-10, 10)) +
+  scale_color_distiller(palette = 'RdYlBu', direction = -1) +
+  scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
+  labs(x = 'Longitude', y = 'Latitude', col = 'Year', fill = 'Year',
+       title = 'Centre of gravity of PS effort') +
+  gg.theme +
+  theme(legend.position = 'bottom',legend.text = element_text(angle = 90))
+
 p <- 
   s_eff_COGs |>
   #dplyr::filter(set_type == 'all') |>
@@ -460,7 +633,7 @@ p <-
        title = 'Centre of gravity of LL effort') +
   gg.theme +
   theme(legend.position = 'bottom',legend.text = element_text(angle = 90))
-
+p
 ggsave(p, file = paste0(results_wd, 'effort/effort_COGLL_map.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
 # 4.Area occupied  effort indicator ----
@@ -509,7 +682,7 @@ p <-
   aes(YY, area/1000, col = set_type) +
   geom_line() +
   geom_point(size=0.8) +
-  ylim(0,21000) +
+  #ylim(0,21000) +
   #facet_wrap(~sp_code, nrow = 3) +
   geom_hline(data = area_mns, aes(yintercept = mn_area/1000)) +
   scale_color_brewer(palette = 'Set1') +
@@ -654,4 +827,97 @@ p <-
   theme(legend.position = 'bottom')
 ggsave(p, file = paste0(results_wd, 'effort/effort_20prop_LL2.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
+############################
 
+s_eff3_gridded <-
+  s_eff3 |>
+  group_by(YY, lon, lat, set_type) |>
+  summarise(sets = sum(sets)) |>
+  mutate(cell_area_km2 = 111.32 * 111.32 * cos(lat * pi / 180))
+
+# Step 2: Aggregate effort per cell, year, and set_type
+effort_cells <- s_eff3_gridded %>%
+  group_by(YY, set_type, lat, lon) %>%
+  summarise(sets = sum(sets, na.rm = TRUE),
+            cell_area_km2 = mean(cell_area_km2),
+            .groups = "drop")
+
+# Step 3: Function to compute area at X% of cumulative effort
+get_area_for_effort_percentile <- function(df, percentile = 0.9) {
+  total_effort <- sum(df$sets, na.rm = TRUE)
+  
+  df_sorted <- df %>%
+    arrange(desc(sets)) %>%
+    mutate(
+      cum_effort = cumsum(sets),
+      cum_effort_pct = cum_effort / total_effort
+    )
+  
+  area_covered <- df_sorted %>%
+    filter(cum_effort_pct <= percentile) %>%
+    summarise(area_km2 = sum(cell_area_km2, na.rm = TRUE)) %>%
+    pull(area_km2)
+  
+  return(area_covered)
+}
+
+# Step 4: Apply by year and set_type
+effort_area_by_group <- s_eff3_gridded %>%
+  group_by(YY, set_type) %>%
+  group_modify(~ tibble(
+    area_10 = get_area_for_effort_percentile(.x, 0.10),
+    area_25 = get_area_for_effort_percentile(.x, 0.25),
+    area_50 = get_area_for_effort_percentile(.x, 0.50),
+    area_75 = get_area_for_effort_percentile(.x, 0.75),
+    area_90 = get_area_for_effort_percentile(.x, 0.90))) %>%
+  ungroup()
+
+# 25th 50th and 75th percentile area occupied
+effort_area_by_group %>%
+  ggplot(aes(x = YY, y = area_50/1000, color = set_type, group = set_type)) +
+  geom_line(position = position_dodge(width = 0.8), size = 1) +
+  geom_point() +
+  geom_ribbon(aes(ymin = area_25/1000, ymax = area_75/1000, fill = set_type), 
+              alpha = 0.2, 
+              position = position_dodge(width = 0.8), 
+              color = NA) +
+  scale_color_brewer(palette = 'Set1') +
+  scale_fill_brewer(palette = 'Set1') +
+  facet_wrap(~set_type, ncol = 1) +
+  gg.theme +
+  labs(y = "Area occupied (x1000 km2)", x = 'Year') +
+       #title = "Effort Area over Time with Uncertainty Ribbon") +
+  theme(aspect.ratio = 0.5, legend.position = 'none')
+
+# 90th% area occupied
+effort_area_by_group %>%
+  ggplot(aes(x = YY, y = area_90/1000, color = set_type, group = set_type)) +
+  geom_line() +
+  geom_point() +
+  scale_color_brewer(palette = 'Set1') +
+  gg.theme +
+  labs(y = "Area occupied (x1000 km2)", x = 'Year') +
+  theme(legend.position = 'bottom')
+
+
+
+###############################
+
+library(adehabitatHR)
+library(sp)
+
+# Your data must be spatial points with effort weights
+coords <- s_eff3 %>% dplyr::select(lon, lat)
+spdf <- SpatialPointsDataFrame(coords, data = s_eff3)
+
+# Weighted KDE
+kud <- kernelUD(spdf, weights = spdf$sets)
+
+# Get 50% and 90% contour polygons
+hr_50 <- getverticeshr(kud, percent = 50)
+hr_90 <- getverticeshr(kud, percent = 90)
+
+# Calculate area in km² (assuming projected CRS, otherwise approximate)
+library(raster)
+area_50 <- raster::area(hr_50) / 1e6  # convert m² to km²
+area_90 <- raster::area(hr_90) / 1e6
