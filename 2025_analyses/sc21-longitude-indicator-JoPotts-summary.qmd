@@ -1,0 +1,462 @@
+---
+title: "SC21 indicators fishery shift"
+format: docx
+editor: visual
+execute: 
+  warning: false
+  echo: false
+  cache: true
+---
+
+```{r}
+#| label: load-libraries
+
+library(flextable)
+library(ggeffects)
+library(ggpubr)
+library(gratia)
+library(kableExtra)
+library(mgcv)
+library(tidyverse)
+
+
+```
+
+```{r}
+#| label: import-data
+
+data_wd <- 'Data/'
+
+load(paste0(data_wd, "/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+
+df <- sbest_dat3 %>%
+  mutate(yyF = as.factor(as.character(yy)))
+
+```
+
+# Data Summary and Exploration
+
+Broadly taken from Nick's report:
+
+Tuna purse seine data, aggregated monthly by flag and set type, were extracted for the period 1990–2023 and constrained to the area between 15° S and 10° N latitude, and east of 130°E longitude.
+
+Many flags had poor temporal coverage over the time period, so this analysis focused on 10 flags that were surveyed, more or less, every year. The retained flags were `r sort(unique(df$flag))` (see @fig-long-by-year).
+
+An exploratory plot of effort centroid across years by flag is shown in @fig-long-by-year-error, demonstrating that although the mean longitude (and latitude) may shift over years, with respect to the overall footprint of the fishery, this shift is relatively small. As such, detecting fine scale movements in fishery effort will be difficult.
+
+```{r}
+#| label: fig-long-by-year
+#| fig-cap: "Longitude of individual sets, for each flag, across the time period 1990-2023. Red dashed line is the centroid of all sets, blue dots are the centroids by year."
+#| fig-width: 12
+#| fig-height: 8
+
+mean_lond_by_year <- df %>%
+  group_by(yy) %>%
+  summarise(mean_lond = mean(lond, na.rm = TRUE), 
+            mean_lat = mean(latd, na.rm = TRUE))
+
+breaks_every_2 <- as.character(seq(min(df$yy), max(df$yy), by = 2))
+
+ggplot(data = df, aes(x = as.factor(yy), y = lond)) +
+  geom_violin() + 
+  theme_bw() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8)) + 
+  geom_hline(yintercept = mean(df$lond, na.rm = TRUE), 
+             linetype = "dashed", color = "red") + 
+  geom_point(data = mean_lond_by_year, 
+             aes(x = as.factor(yy), y = mean_lond),
+             color = "blue", size = 0.9) +
+  facet_wrap(~flag) + 
+  ylab("Longitude") + xlab("Year") + 
+  scale_x_discrete(breaks = breaks_every_2)
+
+```
+
+```{r}
+#| include: true
+#| label: fig-long-by-year-error
+#| fig-cap: "Mean longitude and latitude for each flag, across years. Grey error bars are the minimum and maximum."
+#| fig-width: 12
+#| fig-height: 8
+
+
+mean_lond_by_year_flag <- df %>%
+  group_by(yy, flag) %>%
+  summarise(min_lond = min(lond, na.rm = TRUE), 
+            mean_lond = mean(lond, na.rm = TRUE), 
+            max_lond = max(lond, na.rm = TRUE), 
+            min_lat = min(latd, na.rm = TRUE),
+            mean_lat = mean(latd, na.rm = TRUE), 
+            max_lat = max(latd, na.rm = TRUE))
+
+ggplot(mean_lond_by_year_flag, aes(x = mean_lond, y = mean_lat)) +
+    geom_segment(
+        data = mean_lond_by_year_flag,
+        aes(x = min_lond, y = mean_lat, xend = max_lond, yend = mean_lat),
+        inherit.aes = FALSE,
+        color = "lightgrey",
+        linetype = "solid",
+        linewidth = 0.6
+    ) +
+    geom_segment(
+        data = mean_lond_by_year_flag,
+        aes(x = mean_lond, y = min_lat, xend = mean_lond, yend = max_lat),
+        inherit.aes = FALSE,
+        color = "lightgrey",
+        linetype = "solid",
+        linewidth = 0.6
+    ) + theme_bw() +
+    labs(
+        x = "Mean Longitude",
+        y = "Mean Latitude",
+        color = "Year"
+    ) +
+    geom_path(aes(color = yy), linewidth = 1) +
+    geom_point(aes(color = yy)) +
+    facet_wrap(~flag)
+
+```
+
+\newpage
+
+# Methods
+
+To explore spatial and temporal shifts in the longitude of fishing activity, we fitted a suite of generalized additive models (GAMs) in R (v. 4.5.0, R Core Team 2025) using the `mcgv` package (v.1.8-42; Wood 2017). All models assumed a Gamma distribution with a log link. All models were fit using the fast REML (method = "fREML") estimation routine and discrete = TRUE for computational efficiency given the large sample size (n ≈ 1.17 million). Nuisance variables with a fixed structure across all models explored were:
+
+-   month, modelled using a cyclic cubic spline to reflect the cyclic nature of the calendar year,
+
+-   latitude, modelled using a thin-plate spline to capture broad-scale spatial trends, and
+
+-   set-type (`r sort(unique(df$set_type))`) and Oceanic Niño Index (categorised in to `r sort(unique(df$oniF))`) were modelled as fixed effects.
+
+We compared alternative model formulations to assess temporal trends (year, yy) and variation among fishing fleets (flags). See @tbl-model-summary for a description of each model fitted and its interpretation.
+
+```{r}
+#| label: tbl-model-summary
+
+
+model_table <- data.frame(
+  Name = c("Linear", 
+           "Factor",
+           "Smooth",
+           "Year:flag shared smooth^^", 
+           "Year:flag separate smooths**"
+           ),
+  `Temporal model structure` = c(
+    "yy + s(flag, bs = 're', k = 10)", 
+    "yyF + s(flag, bs = 're', k = 10)",
+    "s(yy, k = 10) + s(flag, bs = 're')",
+    "s(yy, flag, bs = 'fs', k = 10)", 
+    "s(yy, by = flag, bs = 'fs')"
+  ),
+  `Nuisance parameters` = c(
+    "s(mm, k = 6, bs = 'cc') + set_type + oniF + s(latd, k=5)",
+    "s(mm, k = 6, bs = 'cc') + set_type + oniF + s(latd, k=5)",
+    "s(mm, k = 6, bs = 'cc') + set_type + oniF + s(latd, k=5)",
+    "s(mm, k = 6, bs = 'cc') + set_type + oniF + s(latd, k=5)",
+    "s(mm, k = 6, bs = 'cc') + set_type + oniF + s(latd, k=5)"
+  )
+)
+
+# Print the table
+kable(model_table, format = "markdown", caption = "Summary of GAM models used") 
+
+
+```
+
+\^\^ Shared smooth of year across flags, with flag-specific deviations (i.e., shared smoothing penalty).
+
+\*\* Separate smooths of year for each flag, estimated independently (i.e., no shared penalty).
+
+\newpage
+
+# Results
+
+```{r}
+#| label: model-fits
+#| results: hide
+
+mod.yy.flag <- bam(
+  lond ~ 
+    yy + 
+    s(flag, bs = 're', k = 10) + 
+    s(mm, bs = "cc", k = 6) +        
+    s(latd, k = 5) +                 
+    set_type +                       
+    oniF,                            
+  data = df,
+  family = Gamma(link = "log"),
+  method = "fREML",
+  discrete = TRUE
+)
+summary(mod.yy.flag)
+
+mod.yyF.flag <- bam(
+  lond ~ 
+    as.factor(yy) + 
+    s(flag, bs='re') + 
+    s(mm, bs = "cc", k = 6) +        
+    s(latd, k = 5) +                 
+    set_type +                       
+    oniF, 
+  data = df,
+  family = Gamma(link = "log"), 
+  method = "REML")
+
+summary(mod.yyF.flag)
+
+
+mod_syear_sflag <- bam(
+  lond ~ 
+    s(yy, k = 10) + 
+    s(flag, bs = 're') + 
+    s(mm, bs = "cc", k = 6) +        
+    s(latd, k = 5) +                 
+    set_type +                       
+    oniF,                            
+  data = df,
+  family = Gamma(link = "log"),
+  method = "fREML",
+  discrete = TRUE
+)
+AIC(mod_syear_sflag)
+# plot(mod_sflag_syear)
+
+
+
+mod_syearbyflag <- bam(
+  lond ~ 
+    s(yy, by = flag, k = 20) + 
+    s(mm, bs = "cc", k = 6) +        
+    s(latd, k = 5) +                 
+    set_type +                       
+    oniF,                           
+  data = df,
+  family = Gamma(link = "log"),
+  method = "fREML",
+  discrete = TRUE
+)
+summary(mod_syearbyflag)
+
+mod_syearflag.sharedsmooth <- bam(
+  lond ~ 
+    s(yy, flag, bs = "fs", k = 10) + 
+    s(mm, bs = "cc", k = 6) +        
+    s(latd, k = 5) +                 
+    set_type +                       
+    oniF,                           
+  data = df,
+  family = Gamma(link = "log"),
+  method = "fREML",
+  discrete = TRUE
+)
+summary(mod_syearflag.sharedsmooth)
+
+
+objects()
+```
+
+```{r}
+#| label: tbl-model-fits
+
+aic.table = AIC(mod.yy.flag,
+                mod.yyF.flag,
+                mod_syear_sflag,
+                mod_syearbyflag, 
+                mod_syearflag.sharedsmooth) 
+aic.table$pc.dev = c(summary(mod.yy.flag)$dev.expl, 
+                     summary(mod.yyF.flag)$dev.expl, 
+                     summary(mod_syear_sflag)$dev.expl, 
+                     summary(mod_syearbyflag)$dev.expl, 
+                     summary(mod_syearflag.sharedsmooth)$dev.expl)
+
+aic.table = aic.table %>%
+  mutate(dAIC = AIC - min(AIC)) %>%
+  arrange(dAIC) %>%
+  select(-pc.dev, everything(), pc.dev)
+
+kable(aic.table, digits = 3, caption = "Model comparison ranked by AIC, with deviance explained (dev).")
+```
+
+Model comparison based on AIC, indicated strongest support for the model with a shared smooth of year per flag (year:flag shared smooth, @tbl-model-summary), which explained `r round(aic.table$pc.dev[1],3)*100`% of the deviance and had the lowest AIC (@tbl-model-fits). Based on this model, the marginal smooth of year averaged over all flags is shown in @fig-smooth-of-year. Flag-specific smooths are shown in @fig-smooth-by-flag. The smoothed trend shows a westward shift in longitude from the early 1990s to around 2010, followed by a reversal with a progressive eastward movement. By the early 2020s, the average longitude had returned to approximately its original position, indicating a broad cyclical or looping spatial trend over time.
+
+Partial effects of nuisance parameters (i.e., latitude, month, set type and ONI) are shown in @fig-nuisance-params.
+
+Even when controlling for all nuisance parameters, the estimated magnitude of shift in longitude across years is highly variable over year (@fig-smooth-of-year), and also between flags (@fig-smooth-by-flag).
+
+There is some suggestion that different flags might 'move' more freely with respect to longitude. For example, @fig-smooth-group-by-flag shows flags with a broadly positive trend over time (left panel) compared to those that remained relatively stationary (right panel).
+
+```{r}
+#| label: fig-smooth-of-year
+#| fig-cap: Marginal smooth of year averaged over all flags, based on the best fitting model. Average observed longitude for all flags by year is given in a dark grey line.
+
+plot(ggpredict(mod_syearflag.sharedsmooth, terms = "yy")) + 
+  #ggtitle('Marginal smooth of year (averaged over flags)') + 
+  ggtitle("") + 
+  theme_bw() + 
+  ylab('Longitude') + xlab("Year") + 
+  geom_line(data = mean_lond_by_year, 
+             aes(x = yy, y = mean_lond), 
+            color = 'darkgrey')
+
+
+```
+
+```{r}
+#| label: fig-smooth-by-flag
+#| fig-cap: "Flag-specific smooths of year with shared smoothing penalty based on the best model."
+
+preds <- ggpredict(mod_syearflag.sharedsmooth, terms = c("yy", "flag")) 
+ggplot(preds, aes(x = x, y = predicted, color = group)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2, color = NA) +
+  theme_bw() +
+  labs(title = "",
+       x = "Year", y = "Predicted longitude") +
+  theme(legend.position = "right")
+
+
+```
+
+```{r}
+#| label: fig-nuisance-params
+#| fig-cap: "Partial effects from the best-fitting model. Panels show the marginal effect of (A) latitude, (B) month, (C) set type, and (D) Oceanic Niño Index (ONI) phase on the longitude of fishing effort. Smooths for latitude (A) and month (B) represent partial effects averaged over all years and flags. Effects for set type (C) and ONI (D) represent estimated differences in mean longitude, marginalised over all other predictors. Shaded areas and error bars show 95% confidence intervals."
+
+p1 = draw(mod_syearflag.sharedsmooth, select = "s(latd)") + 
+  theme_bw() + 
+  xlab("Latitude") + ggtitle("A)")
+p2 = draw(mod_syearflag.sharedsmooth, select = "s(mm)") + 
+  theme_bw() + 
+  xlab("Month") + ggtitle("B)")
+p3 = ggpredict(mod_syearflag.sharedsmooth, terms = c("set_type")) %>% 
+  plot() + 
+  theme_bw() + 
+  ylab("Longitude") + 
+  xlab("Set type") + ggtitle("C)")
+p4 = ggpredict(mod_syearflag.sharedsmooth, terms = "oniF") %>% 
+  plot() +
+  theme_bw() + 
+  ylab("Longitude") + 
+  xlab("Oceanic Niño Index") + ggtitle("D)")
+
+# ggarrange(p1, p2, p3, p4, nrow=2, ncol=2, labels = 'AUTO')
+p1 
+p2 
+p3
+p4
+
+
+```
+
+```{r}
+#| label: fig-smooth-group-by-flag
+#| fig-width: 10
+#| fig-height: 6
+#| fig-cap: 'Flag-specific smooths of year with shared smoothing penalty based on the best model for flags with increasing gradient over the time period (left hand panel) and flags with a stable gradient over the time period (right hand panel).'
+
+deriv <- derivatives(mod_syearflag.sharedsmooth, select = "s(yy,flag)", interval = "confidence")
+
+
+sign_change_summary <- deriv %>%
+  group_by(flag) %>%
+  mutate(sign = sign(.derivative)) %>%
+  summarise(
+    n_sign_changes = sum(diff(sign) != 0, na.rm = TRUE),
+    mostly_positive = mean(.derivative > 0, na.rm = TRUE),
+    mostly_negative = mean(.derivative < 0, na.rm = TRUE)
+  )
+# sign_change_summary
+
+group1_flags <- c("KI",  "KR", "TW", "US", "VU")
+group2_flags <- c( "FM", "JP", "PG", "PH", "SB")
+
+preds_group1 <- subset(preds, group %in% group1_flags)
+preds_group2 <- subset(preds, group %in% group2_flags)
+
+ymin_all <- min(preds$conf.low, na.rm = TRUE)
+ymax_all <- max(preds$conf.high, na.rm = TRUE)
+
+p1 <- ggplot(preds_group1, aes(x = x, y = predicted, color = group)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2, color = NA) +
+  theme_bw() +
+  coord_cartesian(ylim = c(ymin_all, ymax_all)) +
+  labs(title = "",
+       x = "Year", y = "Predicted longitude") +
+  theme(legend.position = "bottom")
+
+p2 <- ggplot(preds_group2, aes(x = x, y = predicted, color = group)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = conf.low, ymax = conf.high, fill = group), alpha = 0.2, color = NA) +
+  theme_bw() +
+  coord_cartesian(ylim = c(ymin_all, ymax_all)) +
+  labs(title = "",
+       x = "Year", y = "Predicted longitude") +
+  theme(legend.position = "bottom")
+
+ggarrange(p1, p2)
+
+```
+
+
+## Residuals of mod
+
+Model residuals in general are tolerable, but: 
+
+(1) Residuals on the response scale (i.e., longitude) showed deviations of up to ±30° (@fig-resids1-yyF), indicating substantial prediction error for some observations. While deviance residuals suggested the model was statistically consistent with the assumed error distribution (@fig-resids2-yyF), the magnitude of raw residuals highlights considerable uncertainty in spatial predictions and potential limitations in model structure or data coverage
+
+(2) spatially they are not great (see @fig-resids-spatial) suggesting consistent under prediction of longitude in the west and over prediction of longitude in the east. Despite the spatial variables modelled here, it seems there is unaccounted spatial pattern in the data that flag and longitude are not accounting for. 
+
+
+```{r}
+#| label: fig-resids1-yyF
+#| fig-cap: "Magnitude of (raw) residuals across year."
+
+df$preds = fitted(mod_syearflag.sharedsmooth, type='response')
+df$resids = df$lond - df$preds
+
+ggplot(df, aes(x = yyF, y = resids)) +
+    geom_boxplot() +
+    theme_bw() +
+    labs(x = "Year", y = "Residuals") + theme(axis.text.x = element_text(angle=45, size=7))
+```
+
+
+```{r}
+#| label: fig-resids2-yyF
+#| fig-cap: "Magnitude of deviance residuals across year."
+
+df$resids_scale = mod_syearflag.sharedsmooth$residuals
+
+ggplot(df, aes(x = yyF, y = resids_scale)) +
+    geom_boxplot() +
+    theme_bw() +
+    labs(x = "Year", y = "Residuals") + theme(axis.text.x = element_text(angle=45, size=7))
+
+```
+
+
+
+```{r}
+#| label: fig-resids-spatial
+#| fig-cap: "Residuals of 'best' model plotted spatially by year. Consistent pattern of under (blue shaded squares) and over prediction (red shaded squares) in west and east, respectively."
+
+
+# on scale of the repsonse variable
+ggplot(df, aes(x = lond, y = latd, fill = resids)) +
+  geom_tile() +
+  scale_fill_gradient2(
+    low = "blue", mid = "white", high = "red",
+    midpoint = 0,
+    name = "Residual"
+  ) +
+  theme_bw() +
+  labs(x = "Longitude", y = "Latitude", 
+       title = "Spatial Residuals") + 
+  facet_wrap(~yyF) + 
+  theme(axis.text.x = element_text(angle=45, size = 7))
+
+
+```
+
+
