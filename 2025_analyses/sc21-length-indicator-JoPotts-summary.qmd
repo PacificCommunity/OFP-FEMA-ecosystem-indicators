@@ -1,0 +1,1000 @@
+---
+title: "SC21 indicators length changes"
+format: docx
+editor: visual
+execute: 
+  warning: false
+  echo: false
+  cache: true
+table-of-contents: true  
+---
+
+```{r}
+#| label: load-libraries
+
+library(flextable)
+library(ggeffects)
+library(ggpubr)
+library(gratia)
+library(kableExtra)
+library(mgcv)
+library(tidyverse)
+
+
+```
+
+```{r}
+#| label: import-data
+#| include: false
+
+data_wd <- 'Data/'
+
+load(paste0(data_wd, "/bio_len_freqs_clean_jo.Rdata"))
+
+LFs$yyF <- factor(LFs$yy)
+LFs$FLAG_ID <- factor(LFs$FLAG_ID)
+
+length(which(LFs$freq==0))
+
+LFs = LFs %>%
+  filter(freq>0)
+
+table(LFs$FLAG_ID)  
+dim(LFs)
+
+```
+
+\newpage
+
+# Methods
+
+To explore spatial and temporal shifts in the mean length of captured and measured fish, we fitted a suite of generalized additive models (GAMs) in R (v. 4.5.0, R Core Team 2025) using the mcgv package (v.1.8-42; Wood 2017). All models assumed a Gamma distribution with a log link, and the model was weighted by the number of fish measured to estimate each mean length. Nuisance variables with a fixed structure across all models explored were:
+
+- quarter, modelled as a fixed effect, and
+
+- a bivariate spatial smooth over latitude and longitude (5 degree spatial resolution), modelled using a tensor product.
+
+We compared alternative model formulations to assess temporal trends (year, yy) and variation among fishing fleets (flags). See @tbl-model-summary for a description of each model fitted and its interpretation. Model comparison was based on AIC.
+
+```{r}
+#| label: tbl-model-summary
+
+
+model_table <- data.frame(
+  Name = c("Null",
+           "Linear", 
+           "Factor",
+           "Smooth",
+           "Year:flag shared smooth^^", 
+           "Year:flag separate smooths**"),
+  `Temporal model structure` = c(
+    "s(flag, bs = 're', k = 10)",
+    "yy + s(flag, bs = 're', k = 10)", 
+    "yyF + s(flag, bs = 're', k = 10)",
+    "s(yy, k = 10) + s(flag, bs = 're')",
+    "s(yy, flag, bs = 'fs', k = 10)", 
+    "s(yy, by = flag, bs = 'fs')"), 
+  `Nuisance parameters` = c(
+    "qtrF + te(lat5, lon5, k = c(5, 10))",
+    "qtrF + te(lat5, lon5, k = c(5, 10))",
+    "qtrF + te(lat5, lon5, k = c(5, 10))",
+    "qtrF + te(lat5, lon5, k = c(5, 10))",
+    "qtrF + te(lat5, lon5, k = c(5, 10))",
+    "qtrF + te(lat5, lon5, k = c(5, 10))")
+)
+
+# Print the table
+kable(model_table, format = "markdown", caption = "Summary of GAM models used") 
+```
+
+\^\^ Shared smooth of year across flags, with flag-specific deviations (i.e., shared smoothing penalty).
+
+\*\* Separate smooths of year for each flag, estimated independently (i.e., no shared penalty).
+
+\newpage
+
+# SKJ - PS modelling
+
+SKJ tuna purse seine data were extracted for the period 1990–2023 and constrained to the area between 15° S and 10° N latitude, and east of 130°E longitude. Data were at 5° spatial resolution. Grid cells with fewer than 100 length measurements were omitted (see @fig-skj-heatmap-round2). Analysis based on individual lengths performed poorly (results not shown), so mean length per 5° grid cell was used as the response variable. Temporal coverage of some flags were exceptionally sparse, so CK, NR, SU were removed. 
+
+```{r}
+#| label: skj-data-manip
+#| include: false
+
+# SKJ modelling ----
+skj.PS = LFs %>% 
+  filter(sp_code=="SKJ" & gr == "S" & 
+           lat5 >= -15 & lat5 <= 10 & lon5 >= 130 &
+           !(FLEET_ID %in% c("PH", "ID", "VN") | 
+               FLAG_ID %in% c("PH", "ID", "VN"))
+  )
+
+dim(skj.PS)
+
+skj.PS$FLAG_ID <- droplevels(skj.PS$FLAG_ID)
+
+table(skj.PS$yy, skj.PS$FLAG_ID)
+
+skj.PS = skj.PS %>% 
+  filter(!FLAG_ID %in% c("CK", "NR", "SU"))
+
+skj.PS$FLAG_ID <- droplevels(skj.PS$FLAG_ID)
+
+```
+
+```{r}
+#| label: fig-skj-heatmap-round1
+#| include: false
+
+
+LFs_summary <- skj.PS %>%
+  group_by(yy, lat5, lon5) %>%
+  summarise(n_fish = sum(freq, na.rm = TRUE), .groups = "drop")
+
+# Plot spatial heatmap
+ggplot(LFs_summary, aes(x = lon5, y = lat5, fill = n_fish)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "No. of fish", trans = "log10") +  # log scale helps with skew
+  facet_wrap(~ yy) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(x = "Longitude", y = "Latitude", title = "")
+
+```
+
+
+```{r}
+#| label: fig-skj-heatmap-round2
+#| fig-cap: "Number of fish length records per 5° grid cell, from 1990 to 2023."
+#| fig-width: 10
+#| fig-height: 8
+
+# Omit spatial grid cells with fewer than 100 length records:
+
+keep_cells <- LFs_summary %>%
+  filter(n_fish >= 100) %>%
+  select(yy, lat5, lon5)
+
+# Then, keep only those rows in skj.PS that match those cells
+skj.PS.filtered <- skj.PS %>%
+  inner_join(keep_cells, by = c("yy", "lat5", "lon5"))
+
+LFs_summary <- skj.PS.filtered %>%
+  group_by(yy, lat5, lon5) %>%
+  summarise(n_fish = sum(freq, na.rm = TRUE), .groups = "drop")
+
+# Plot spatial heatmap
+ggplot(LFs_summary, aes(x = lon5, y = lat5, fill = n_fish)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "No. of fish", trans = "log10") +  # log scale helps with skew
+  facet_wrap(~ yy) +
+  coord_fixed() +
+  theme_bw() +
+  labs(x = "Longitude", y = "Latitude") + 
+  theme(legend.position = 'bottom')
+
+```
+
+
+
+```{r}
+#| label: skj-mods
+#| include: false
+
+skj_agg <- skj.PS.filtered %>%
+  group_by(yy, qtr, lat5, lon5, FLAG_ID) %>%
+  summarise(
+    mean_len = weighted.mean(len, freq),
+    total_freq = sum(freq),
+    .groups = "drop"
+  )
+
+skj_agg$yyF = factor(skj_agg$yy)
+skj_agg$qtrF = factor(skj_agg$qtr)
+
+dim(skj_agg)
+
+# model selection on aggregate data 
+
+# M0: No year
+mod_null <- bam(
+  mean_len ~ 
+    s(FLAG_ID, bs = 're') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                            
+  data = skj_agg,
+  family = Gamma(link = "log"), 
+  weights = total_freq)
+
+mod.yy.flag <- bam(
+  mean_len ~ 
+    yy + 
+    s(FLAG_ID, bs = 're', k = 10) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                            
+  data = skj_agg,
+  family = Gamma(link = "log"), 
+  weights = total_freq)
+summary(mod.yy.flag)
+
+mod.yyF.flag <- bam(
+  mean_len ~ 
+    as.factor(yy) + 
+    s(FLAG_ID, bs='re') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)), 
+  data = skj_agg,
+  family = Gamma(link = "log"), 
+  weights = total_freq)
+
+summary(mod.yyF.flag)
+
+
+mod_syear_sflag <- bam(
+  mean_len ~ 
+    s(yy, k = 10) + 
+    s(FLAG_ID, bs = 're') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                            
+  data = skj_agg,
+  family = Gamma(link = "log"), 
+  weights = total_freq)
+summary(mod_syear_sflag)
+# plot(mod_sflag_syear)
+
+
+
+mod_syearbyflag <- bam(
+  mean_len ~ 
+    s(yy, by = FLAG_ID, k = 20) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                           
+  data = skj_agg,
+  family = Gamma(link = "log"), 
+  weights = total_freq)
+summary(mod_syearbyflag)
+
+mod_syearflag.sharedsmooth <- bam(
+  mean_len ~ 
+    s(yy, FLAG_ID, bs = "fs", k = 10) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                           
+  data = skj_agg,
+  family = Gamma(link = "log"), 
+  weights = total_freq)
+summary(mod_syearflag.sharedsmooth)
+
+
+model_list <- list(mod_null= mod_null,
+                   mod.yy.flag = mod.yy.flag, 
+                   mod.yyF.flag = mod.yyF.flag, 
+                   mod_syear_sflag = mod_syear_sflag, 
+                   mod_syearbyflag = mod_syearbyflag,
+                   mod_syearflag.sharedsmooth = mod_syearflag.sharedsmooth)
+
+aic.table <- data.frame(
+  Model = names(model_list),
+  AIC = sapply(model_list, AIC),
+  pc.dev = sapply(model_list, function(m) summary(m)$dev.expl)
+)
+
+aic.table = aic.table %>%
+  #mutate(dAIC = AIC - min(AIC)) %>%
+  arrange(desc(pc.dev))
+
+
+```
+
+The model with the highest deviance explained was `mod_syearbyflag` (`r round(aic.table$pc.dev[1],3)*100`%, @tbl-SKJ-model-fits). Based on this model, flag-specific smooths are shown in @fig-mod_syearbyflag. Although this model was the best performing of those explored, uncertainty in model fits remained unsatisfactorily high, with prediction in mean length uncertainty spanning 40cms (i.e., 50% of the observed mean lengths), representing substantial uncertainty.
+
+
+```{r}
+#| label: tbl-SKJ-model-fits
+#| 
+#| 
+
+
+#aic.table
+
+kable(aic.table, digits = 3, caption = "Model comparison ranked by AIC, with deviance explained (dev).")
+```
+
+
+
+```{r}
+#| label: fig-mod_syearbyflag
+#| fig-cap: "Partial plot of smooth of year by flag, based on 'mod_syearbyflag' (scale of the link function)."
+
+## plot mod_syearbyflag ----
+syear_flag_df <- smooth_estimates(mod_syearbyflag) %>%
+    filter(grepl("^s\\(yy\\):FLAG_ID", .data$.smooth)) %>%
+    mutate(FLAG_ID = gsub("s\\(yy\\):FLAG_ID", "", .data$.smooth))
+
+
+ggplot(syear_flag_df, aes(x = yy, y = .estimate, color = FLAG_ID)) +
+    geom_line() +
+    geom_ribbon(aes(ymin = .estimate - 2 * .se, ymax = .estimate + 2 * .se, fill = FLAG_ID), alpha = 0.2, color = NA) +
+    facet_wrap(~ FLAG_ID, scales = "free_y") +
+    labs(
+        title = "",
+        x = "Year",
+        y = "Partial Effect"
+    ) +
+    theme_bw() +
+    theme(legend.position = "none")
+
+```
+
+
+
+
+```{r}
+#| include: false
+#| label: fig-
+#| fig-cap: 'Predicted mean fish length by year and flag, for qtr==1 and median lat5 and median lon5.'
+
+selected_flags <- unique(skj_agg$FLAG_ID)
+
+newdata <- expand.grid(
+    yy = seq(min(skj_agg$yy), max(skj_agg$yy)),
+    FLAG_ID = selected_flags,
+    qtrF = 1,
+    lat5 = median(skj_agg$lat5, na.rm = TRUE),
+    lon5 = median(skj_agg$lon5, na.rm = TRUE)
+)
+
+newdata$fit <- predict(mod_syearbyflag, 
+                       newdata = newdata, 
+                       type = "response")
+newdata$se <- predict(mod_syearbyflag, 
+                       newdata = newdata, 
+                       type = "response", 
+                      se=TRUE)$se.fit
+
+ggplot(newdata, aes(x = yy, y = fit)) +
+  geom_ribbon(aes(ymin = fit - 1.96 * se, 
+                  ymax = fit + 1.96 * se), 
+              alpha = 0.2, fill = "grey70") +
+  geom_line() +
+  facet_wrap(~ FLAG_ID, scales = "free_y") +
+    labs(title = "",
+         y = "Predicted mean length (cm)", 
+         x = "Year") + 
+  theme_bw()
+```
+
+```{r}
+#| include: false
+#| 
+skj_agg$fits = mod_syearbyflag$fitted.values
+
+# Plot spatial surface for that year
+ggplot(skj_agg, aes(x = mean_len, y = fits, col=yyF)) +
+  geom_point() + 
+  geom_abline(intercept=0, slope=1) +
+  geom_smooth(method='lm', col='black') + 
+  labs(y = "fitted values", x = "observed mean length") +
+  facet_wrap(~yyF) + theme_bw() +
+  theme(legend.position='none')
+
+skj_agg$raw_resids = skj_agg$fits - skj_agg$mean_len
+ggplot(skj_agg, aes(x=raw_resids)) + 
+  geom_histogram() + 
+  theme_bw()
+```
+
+
+
+
+
+
+
+
+\newpage
+
+
+# BET - LL modelling
+
+BET tuna longline data were extracted for the period 2000–2023. Data were at 5° spatial resolution. Grid cells with fewer than 100 length measurements were omitted (see @fig-bet-heatmap-round2). Temporal coverage of some flags were exceptionally sparse, so BZ, CK, GU, ID, KI, MH, NU, PG, PH, PW, SB, SU, TV, VN, VU, and WS were removed. Response variable was individual length of measured fish.
+
+```{r}
+#| label: bet-data-manip
+#| include: false
+
+# bet modelling ----
+bet.LL = LFs %>% 
+  filter(sp_code=="BET" & gr == "L" & yy >= 2000)
+
+dim(bet.LL)
+
+bet.LL$FLAG_ID <- droplevels(bet.LL$FLAG_ID)
+
+table(bet.LL$yy, bet.LL$FLAG_ID)
+
+bet.LL = bet.LL %>% 
+  filter(!FLAG_ID %in% c("BZ", "CK", "GU", "ID", "KI", "MH", "NU", "PG", "PH", "PW", "SB", "SU", "TV", "VN", "VU", "WS"))
+
+bet.LL$FLAG_ID <- droplevels(bet.LL$FLAG_ID)
+
+```
+
+```{r}
+#| label: fig-bet-heatmap-round1
+#| include: false
+
+
+LFs_summary <- bet.LL %>%
+  group_by(yy, lat5, lon5) %>%
+  summarise(n_fish = sum(freq, na.rm = TRUE), .groups = "drop")
+
+# Plot spatial heatmap
+ggplot(LFs_summary, aes(x = lon5, y = lat5, fill = n_fish)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "No. of fish", trans = "log10") +  # log scale helps with skew
+  facet_wrap(~ yy) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(x = "Longitude", y = "Latitude", title = "")
+
+```
+
+
+```{r}
+#| label: fig-bet-heatmap-round2
+#| fig-cap: "Number of fish length records per 5° grid cell, from 1990 to 2023."
+#| fig-width: 10
+#| fig-height: 8
+
+# Omit spatial grid cells with fewer than 100 length records:
+
+keep_cells <- LFs_summary %>%
+  filter(n_fish >= 100) %>%
+  select(yy, lat5, lon5)
+
+# Then, keep only those rows in bet.LL that match those cells
+bet.LL.filtered <- bet.LL %>%
+  inner_join(keep_cells, by = c("yy", "lat5", "lon5"))
+
+LFs_summary <- bet.LL.filtered %>%
+  group_by(yy, lat5, lon5) %>%
+  summarise(n_fish = sum(freq, na.rm = TRUE), .groups = "drop")
+
+# Plot spatial heatmap
+ggplot(LFs_summary, aes(x = lon5, y = lat5, fill = n_fish)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "No. of fish", trans = "log10") +  # log scale helps with skew
+  facet_wrap(~ yy) +
+  coord_fixed() +
+  theme_bw() +
+  labs(x = "Longitude", y = "Latitude") + 
+  theme(legend.position = 'bottom')
+
+```
+
+
+
+```{r}
+#| label: bet-mods
+#| include: false
+
+bet_agg <- bet.LL.filtered %>%
+  group_by(yy, qtr, lat5, lon5, FLAG_ID) %>%
+  summarise(
+    mean_len = weighted.mean(len, freq),
+    total_freq = sum(freq),
+    .groups = "drop"
+  )
+
+bet.LL.filtered$yyF = factor(bet.LL.filtered$yy)
+bet.LL.filtered$qtrF = factor(bet.LL.filtered$qtr)
+
+dim(bet_agg)
+
+# model selection on aggregate data 
+
+# M0: No year
+mod_null <- bam(
+  len ~ 
+    s(FLAG_ID, bs = 're') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = bet.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+
+mod.yy.flag <- bam(
+  len ~ 
+    yy + 
+    s(FLAG_ID, bs = 're', k = 10) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = bet.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod.yy.flag)
+
+mod.yyF.flag <- bam(
+  len ~ 
+    as.factor(yy) + 
+    s(FLAG_ID, bs='re') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)), 
+  data = bet.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+
+summary(mod.yyF.flag)
+
+
+mod_syear_sflag <- bam(
+  len ~ 
+    s(yy, k = 10) + 
+    s(FLAG_ID, bs = 're') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = bet.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod_syear_sflag)
+# plot(mod_sflag_syear)
+
+
+
+mod_syearbyflag <- bam(
+  len ~ 
+    s(yy, by = FLAG_ID, k = 20) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                       
+  data = bet.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod_syearbyflag)
+
+mod_syearflag.sharedsmooth <- bam(
+  len ~ 
+    s(yy, FLAG_ID, bs = "fs", k = 10) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = bet.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod_syearflag.sharedsmooth)
+
+
+model_list <- list(mod_null= mod_null,
+                   mod.yy.flag = mod.yy.flag, 
+                   mod.yyF.flag = mod.yyF.flag, 
+                   mod_syear_sflag = mod_syear_sflag, 
+                   mod_syearbyflag = mod_syearbyflag,
+                   mod_syearflag.sharedsmooth = mod_syearflag.sharedsmooth)
+
+aic.table <- data.frame(
+  Model = names(model_list),
+  AIC = sapply(model_list, AIC),
+  pc.dev = sapply(model_list, function(m) summary(m)$dev.expl)
+)
+
+aic.table = aic.table %>%
+  #mutate(dAIC = AIC - min(AIC)) %>%
+  arrange(desc(pc.dev))
+
+
+```
+
+The model with the highest deviance explained was `mod_syearbyflag` (`r round(aic.table$pc.dev[1],3)*100`%, @tbl-BET-model-fits). Based on this model, flag-specific smooths are shown in @fig-mod_syearbyflag. Although this model was the best performing of those explored, uncertainty in model fits remained unsatisfactorily high, with prediction in mean length uncertainty spanning 120 cms, representing substantial uncertainty.
+
+
+```{r}
+#| label: tbl-BET-model-fits
+#| 
+#| 
+
+
+#aic.table
+
+kable(aic.table, digits = 3, caption = "Model comparison ranked by AIC, with deviance explained (dev).")
+```
+
+
+
+```{r}
+#| label: fig-BET-mod_syearbyflag
+#| fig-cap: "Partial plot of smooth of year by flag, based on 'mod_syearbyflag' (scale of the link function)."
+
+## plot mod_syearbyflag ----
+syear_flag_df <- smooth_estimates(mod_syearbyflag) %>%
+    filter(grepl("^s\\(yy\\):FLAG_ID", .data$.smooth)) %>%
+    mutate(FLAG_ID = gsub("s\\(yy\\):FLAG_ID", "", .data$.smooth))
+
+
+ggplot(syear_flag_df, aes(x = yy, y = .estimate, color = FLAG_ID)) +
+    geom_line() +
+    geom_ribbon(aes(ymin = .estimate - 2 * .se, ymax = .estimate + 2 * .se, fill = FLAG_ID), alpha = 0.2, color = NA) +
+    facet_wrap(~ FLAG_ID, scales = "free_y") +
+    labs(
+        title = "",
+        x = "Year",
+        y = "Partial Effect"
+    ) +
+    theme_bw() +
+    theme(legend.position = "none")
+
+```
+
+
+
+
+```{r}
+#| include: true
+#| label: fig-BET-best-mod
+#| fig-cap: 'Predicted mean fish length by year and flag, for qtr==1 and median lat5 and median lon5.'
+
+selected_flags <- unique(bet.LL.filtered$FLAG_ID)
+
+newdata <- expand.grid(
+    yy = seq(min(bet.LL.filtered$yy), max(bet.LL.filtered$yy)),
+    FLAG_ID = selected_flags,
+    qtrF = 1,
+    lat5 = median(bet.LL.filtered$lat5, na.rm = TRUE),
+    lon5 = median(bet.LL.filtered$lon5, na.rm = TRUE)
+)
+
+newdata$fit <- predict(mod_syearbyflag, 
+                       newdata = newdata, 
+                       type = "response")
+newdata$se <- predict(mod_syearbyflag, 
+                       newdata = newdata, 
+                       type = "response", 
+                      se=TRUE)$se.fit
+
+ggplot(newdata, aes(x = yy, y = fit, fill = FLAG_ID)) +
+  geom_ribbon(aes(ymin = fit - 1.96 * se, 
+                  ymax = fit + 1.96 * se, 
+                  fill = FLAG_ID), 
+              alpha = 0.2) +
+  geom_line() +
+  facet_wrap(~ FLAG_ID, scales = "free_y") +
+    labs(title = "",
+         y = "Predicted mean length (cm)", 
+         x = "Year") + 
+  theme_bw() +
+    theme(legend.position = "none")
+```
+
+```{r}
+#| include: false
+#| 
+bet.LL.filtered$fits = mod_syearbyflag$fitted.values
+
+# Plot spatial surface for that year
+ggplot(bet.LL.filtered, aes(x = len, y = fits, col=yyF)) +
+  geom_point() + 
+  geom_abline(intercept=0, slope=1) +
+  geom_smooth(method='lm', col='black') + 
+  labs(y = "fitted values", x = "observed mean length") +
+  facet_wrap(~yyF) + theme_bw() +
+  theme(legend.position='none')
+
+bet.LL.filtered$raw_resids = bet.LL.filtered$fits - bet.LL.filtered$len
+ggplot(bet.LL.filtered, aes(x=raw_resids)) + 
+  geom_histogram() + 
+  theme_bw()
+
+ggplot(bet.LL.filtered, aes(x=len, y=raw_resids)) + 
+    geom_point() + 
+    theme_bw()
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\newpage
+
+# YFT - LL modelling
+
+YFT tuna longline data were extracted for the period 2005–2023. Data were at 5° spatial resolution (see @fig-yft-heatmap-round1). Temporal coverage of some flags were exceptionally sparse, so AU, BZ, ID, KI, MH, NU, NZ, PH, PW, SB, TV, VN, VU were removed. Response variable was individual length of measured fish.
+
+```{r}
+#| label: yft-data-manip
+#| include: false
+
+# yft modelling ----
+yft.LL = LFs %>% 
+  filter(sp_code=="YFT" & gr == "L" & yy >= 2005)
+
+dim(yft.LL)
+
+yft.LL$FLAG_ID <- droplevels(yft.LL$FLAG_ID)
+
+table(yft.LL$yy, yft.LL$FLAG_ID)
+
+yft.LL = yft.LL %>% 
+  filter(!FLAG_ID %in% c("AU", "BZ", "ID", "KI", "MH", "NU", "NZ", "PH", "PW", "SB", "TV", "VN", "VU"))
+
+yft.LL$FLAG_ID <- droplevels(yft.LL$FLAG_ID)
+
+```
+
+```{r}
+#| label: fig-yft-heatmap-round1
+#| include: true
+#| fig-cap: "Number of fish length records per 5° grid cell, from 2000 to 2023."
+#| fig-width: 10
+#| fig-height: 8
+
+
+LFs_summary <- yft.LL %>%
+  group_by(yy, lat5, lon5) %>%
+  summarise(n_fish = sum(freq, na.rm = TRUE), .groups = "drop")
+
+# Plot spatial heatmap
+ggplot(LFs_summary, aes(x = lon5, y = lat5, fill = n_fish)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "No. of fish", trans = "log10") +  # log scale helps with skew
+  facet_wrap(~ yy) +
+  coord_fixed() +
+  theme_minimal() +
+  labs(x = "Longitude", y = "Latitude", title = "")
+
+```
+
+
+```{r}
+#| label: fig-yft-heatmap-round2
+#| fig-cap: "Number of fish length records per 5° grid cell, from 2000 to 2023."
+#| fig-width: 10
+#| fig-height: 8
+#| include: false
+
+# Omit spatial grid cells with fewer than 100 length records:
+
+keep_cells <- LFs_summary %>%
+  filter(n_fish >= 100) %>%
+  select(yy, lat5, lon5)
+
+# Then, keep only those rows in yft.LL that match those cells
+yft.LL.filtered <- yft.LL %>%
+  inner_join(keep_cells, by = c("yy", "lat5", "lon5"))
+
+LFs_summary <- yft.LL.filtered %>%
+  group_by(yy, lat5, lon5) %>%
+  summarise(n_fish = sum(freq, na.rm = TRUE), .groups = "drop")
+
+# Plot spatial heatmap
+ggplot(LFs_summary, aes(x = lon5, y = lat5, fill = n_fish)) +
+  geom_tile() +
+  scale_fill_viridis_c(name = "No. of fish", trans = "log10") +  # log scale helps with skew
+  facet_wrap(~ yy) +
+  coord_fixed() +
+  theme_bw() +
+  labs(x = "Longitude", y = "Latitude") + 
+  theme(legend.position = 'bottom')
+
+```
+
+
+
+```{r}
+#| label: yft-mods
+#| include: false
+
+# yft_agg <- yft.LL.filtered %>%
+#   group_by(yy, qtr, lat5, lon5, FLAG_ID) %>%
+#   summarise(
+#     mean_len = weighted.mean(len, freq),
+#     total_freq = sum(freq),
+#     .groups = "drop"
+#   )
+
+yft.LL.filtered$yyF = factor(yft.LL.filtered$yy)
+yft.LL.filtered$qtrF = factor(yft.LL.filtered$qtr)
+
+# dim(yft_agg)
+
+# model selection on aggregate data 
+
+# M0: No year
+mod_null <- bam(
+  len ~ 
+    s(FLAG_ID, bs = 're') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = yft.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+
+mod.yy.flag <- bam(
+  len ~ 
+    yy + 
+    s(FLAG_ID, bs = 're', k = 10) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = yft.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod.yy.flag)
+
+mod.yyF.flag <- bam(
+  len ~ 
+    as.factor(yy) + 
+    s(FLAG_ID, bs='re') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)), 
+  data = yft.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+
+summary(mod.yyF.flag)
+
+
+mod_syear_sflag <- bam(
+  len ~ 
+    s(yy, k = 10) + 
+    s(FLAG_ID, bs = 're') + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = yft.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod_syear_sflag)
+# plot(mod_sflag_syear)
+
+
+
+mod_syearbyflag <- bam(
+  len ~ 
+    s(yy, by = FLAG_ID, k = 10) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                       
+  data = yft.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod_syearbyflag)
+
+mod_syearflag.sharedsmooth <- bam(
+  len ~ 
+    s(yy, FLAG_ID, bs = "fs", k = 10) + 
+    qtrF +
+    te(lat5, lon5, k = c(5, 10)),                         
+  data = yft.LL.filtered,
+  family = Gamma(link = "log"), 
+  weights = freq)
+summary(mod_syearflag.sharedsmooth)
+
+
+model_list <- list(mod_null= mod_null,
+                   mod.yy.flag = mod.yy.flag, 
+                   mod.yyF.flag = mod.yyF.flag, 
+                   mod_syear_sflag = mod_syear_sflag, 
+                   mod_syearbyflag = mod_syearbyflag,
+                   mod_syearflag.sharedsmooth = mod_syearflag.sharedsmooth)
+
+aic.table <- data.frame(
+  Model = names(model_list),
+  AIC = sapply(model_list, AIC),
+  pc.dev = sapply(model_list, function(m) summary(m)$dev.expl)
+)
+
+aic.table = aic.table %>%
+  #mutate(dAIC = AIC - min(AIC)) %>%
+  arrange(desc(pc.dev))
+
+
+```
+
+The model with the highest deviance explained was `mod_syearflag.sharedsmooth` (`r round(aic.table$pc.dev[1],3)*100`%, @tbl-yft-model-fits). Based on this model, flag-specific smooths are shown in @fig-mod_syearbyflag. Although this model was the best performing of those explored, uncertainty in model fits remained unsatisfactorily high, with prediction in mean length uncertainty spanning 100cms, representing substantial uncertainty.
+
+
+```{r}
+#| label: tbl-yft-model-fits
+#| 
+#| 
+
+
+#aic.table
+
+kable(aic.table, digits = 3, caption = "Model comparison ranked by AIC, with deviance explained (dev).")
+```
+
+
+
+```{r}
+#| label: fig-yft-mod_syearbyflag
+#| fig-cap: "Partial plot of smooth of year by flag, based on 'mod_syearbyflag' (scale of the link function)."
+
+smooths_df <- smooth_estimates(mod_syearflag.sharedsmooth)
+
+syear_flag_df <- smooths_df %>%
+  filter(.smooth == "s(yy,FLAG_ID)")  # optional, but clean
+
+# Plot on link scale
+ggplot(syear_flag_df, aes(x = yy, y = .estimate, fill=FLAG_ID)) +
+  geom_line() +
+  geom_ribbon(aes(ymin = .estimate - 2 * .se, ymax = .estimate + 2 * .se), alpha = 0.2) +
+  facet_wrap(~ FLAG_ID, scales = "free_y") +
+  labs(
+    title = "",
+    x = "Year",
+    y = "Effect (link scale)"
+  ) +
+  theme_bw() + 
+  theme(legend.position = 'none')
+```
+
+
+
+
+```{r}
+#| include: true
+#| label: fig-yft-best-mod
+#| fig-cap: 'Predicted mean fish length by year and flag, for qtr==1 and median lat5 and median lon5.'
+
+selected_flags <- unique(yft.LL.filtered$FLAG_ID)
+
+newdata <- expand.grid(
+    yy = seq(min(yft.LL.filtered$yy), max(yft.LL.filtered$yy)),
+    FLAG_ID = selected_flags,
+    qtrF = 1,
+    lat5 = median(yft.LL.filtered$lat5, na.rm = TRUE),
+    lon5 = median(yft.LL.filtered$lon5, na.rm = TRUE)
+)
+
+newdata$fit <- predict(mod_syearflag.sharedsmooth, 
+                       newdata = newdata, 
+                       type = "response")
+newdata$se <- predict(mod_syearflag.sharedsmooth, 
+                       newdata = newdata, 
+                       type = "response", 
+                      se=TRUE)$se.fit
+
+ggplot(newdata, aes(x = yy, y = fit, fill = FLAG_ID)) +
+  geom_ribbon(aes(ymin = fit - 1.96 * se, 
+                  ymax = fit + 1.96 * se), 
+              alpha = 0.2) +
+  geom_line() +
+  facet_wrap(~ FLAG_ID, scales = "free_y") +
+    labs(title = "",
+         y = "Predicted mean length (cm)", 
+         x = "Year") + 
+  theme_bw() + 
+  theme(legend.position = 'none')
+```
+
+```{r}
+#| include: false
+#| 
+yft.LL.filtered$fits = mod_syearbyflag$fitted.values
+
+# Plot spatial surface for that year
+ggplot(yft.LL.filtered, aes(x = len, y = fits, col=yyF)) +
+  geom_point() + 
+  geom_abline(intercept=0, slope=1) +
+  geom_smooth(method='lm', col='black') + 
+  labs(y = "fitted values", x = "observed mean length") +
+  facet_wrap(~yyF) + theme_bw() +
+  theme(legend.position='none')
+
+yft.LL.filtered$raw_resids = yft.LL.filtered$fits - yft.LL.filtered$len
+ggplot(yft.LL.filtered, aes(x=raw_resids)) + 
+  geom_histogram() + 
+  theme_bw()
+
+ggplot(yft.LL.filtered, aes(x=len, y=fits)) + 
+    geom_point() + 
+    theme_bw()
+
+```
+
+
