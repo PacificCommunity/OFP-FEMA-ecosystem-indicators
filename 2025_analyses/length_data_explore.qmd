@@ -1,0 +1,487 @@
+---
+title: "SC21 Length data explore for climate indicators"
+format: docx
+editor: visual
+execute: 
+  warning: false
+  echo: false
+  cache: true
+---
+
+## Exploration of WCPFC longline length frequency data
+
+This document extracts length frequency data from SPC databases to explore it in preparation for further analysis and potential use in SPC's upcoming climate indicators report. Here, we focus on the longline data given the complexity and issues associated with the use and handling of purse seine length frequency data.
+
+```{r}
+#| label: preamble
+library(tidyverse)
+library(sp)
+library(RColorBrewer)
+library(RODBC)
+library(flextable)
+
+# deifne WDs
+data_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/data/'
+results_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/results/'
+
+# Set up mapping theme
+map_bg <- map_data("world") #|>
+map_bg2 <- map_bg |>
+  dplyr::mutate(long = long + 360, group = group + max(group) + 1) |>
+  rbind(map_bg)
+
+# Plot theme
+gg.theme <- theme_bw() + 
+  theme(axis.line = element_line(color="black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        text = element_text(size=14),
+        axis.title = element_text(size=16),
+        strip.background =element_rect(fill="white"),
+        strip.text = element_text(size=14),
+        legend.box.background = element_blank(),
+        legend.background = element_blank(),
+        panel.background = element_rect(fill = NA, color = "black")) 
+
+# WCPFC area
+# Read in WCPFC-CA boundary info
+wcp_ca = read.csv(paste0(data_wd, "wcpfc_ca_stat_area.csv"))
+wcp = Polygon(wcp_ca)
+wcp = SpatialPolygons(list(Polygons(list(wcp), ID = "CA")), 
+                      proj4string=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+# Check that points are in WCPFC-CA
+coords = wcp@polygons[[1]]@Polygons[[1]]@coords
+```
+
+## Database extract
+
+Below, is the database extract from the updated fishmaster SPC database.
+
+```{r echo = T}
+#| label: db-call
+#| echo: true
+
+# db1 <- "driver=SQL Server;server=NOUFAMESQL04;database=FISH_MASTER"
+# channel <- odbcDriverConnect(db1)
+# 
+# LF_raw <-sqlQuery(channel,"
+# SELECT   lf.ORIGIN_ID,
+#          ORIGINDESC,
+#          YR,
+#          QTR,
+#          MON,
+#          GR, 
+#          FLAG_ID,
+#          FLEET_ID,
+#          LAT_SHORT,
+#          CAST(LON_SHORT as CHAR(3)) as lon_c,
+#          RIGHT(LON_SHORT,1) as Lon_h,
+#          AREA_ID,
+#          TSTRAT,
+#          ASTRAT,
+#          SCHTYPE_ID,
+#          SP_ID,
+#          LEN,
+#          LSTRAT,
+#          FREQ
+# FROM  lf.LF_MASTER lf inner join ref.origin o on lf.origin_id = o.origin_id
+# WHERE sp_id in ('BET', 'YFT', 'SKJ')
+# order by 1,2,3,4,5,6,7,8,9,10,14,16", max=0, stringsAsFactors=FALSE) 
+# odbcCloseAll()
+
+#save(LF_raw, file = paste0(data_wd, "biology/bio_len_freqs_raw_07_07_25.Rdata"))
+```
+
+This data is then cleaned by the following filtering steps:
+
+-   WCPFC convention area
+
+-   Longline gear only
+
+-   BET and YFT only
+
+```{r}
+#| label: clean-data
+load(file = paste0(data_wd, "biology/bio_len_freqs_raw.Rdata"))
+
+LFs <-
+  LF_raw |>
+  mutate(lat = case_when(str_detect(LAT_SHORT, "S") ~ as.numeric(substr(LAT_SHORT,1,2))*-1,
+                         str_detect(LAT_SHORT, "^[0-9]{2}N$") ~ as.numeric(substr(LAT_SHORT,1,2)),
+                         .default = NA),
+         lon = ifelse(Lon_h == "W", 360 - lon_c, lon_c)) |>
+  dplyr::rename(yy = YR, qtr = QTR, sp_code = SP_ID, len = LEN, freq = FREQ, gr = GR) %>%
+  filter(!is.na(lat), !is.na(lon) & yy %in% c(1990:2024)) %>%
+  mutate(lat5 = floor(lat / 5) * 5 + 2.5, lon5 = floor(lon / 5) * 5 + 2.5) |>
+  mutate(WCP_CA = point.in.polygon(lon, lat, coords[,1], coords[,2])) |>
+  dplyr::filter(WCP_CA %in% c(1, 2))  |>
+  #dplyr::filter(!(lat > 10 | lat < -15) & lon >= 130) |>
+  dplyr::filter(gr == 'L' & sp_code %in% c('BET', 'YFT'))
+```
+
+## Exploratory plots
+
+Note that length data is collected in 2cm size bins.
+
+```{r}
+#| label: raw-len-by-spp
+#| fig-cap: "Raw length frequency data by species."
+#| fig-width: 6
+#| fig-height: 5
+
+LFs |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~sp_code, scales = 'free') +
+  labs(x = 'Length (cm)', y = 'Frequency') +
+  gg.theme
+
+```
+
+### Year
+
+We can see in @raw-len-by-yr, that the distribution and number of samples collected for both YFT and BET improves over time.
+
+@raw-len-by-area-yr shows the spatial distribution of length samples across the Pacific Ocean where an upper limit of 10000 samples per grid cell was applied for improved plotting. We can see that sampling is not evenly distributed throughout the Pacific Ocean and especially in the early years is at a low resolution leading to the gridding of the data. This reflects different resolutions with which the data was collected. We can also see that in most years there is a high number of samples that come from very few grid cells. We can also see an improvement in the distribution of samples throughout the Pacific Ocean over time, showing improvements in observer and port sampling programs.
+
+```{r}
+#| label: raw-len-by-yr
+#| fig-cap: "Raw length frequency data by year. A) BET, B) YFT."
+#| fig-width: 8
+#| fig-height: 11
+
+p1 <-
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~yy, scales = 'free_y') +
+  labs(x = 'Length (cm)', y = 'Frequency', title = 'A) BET') +
+  gg.theme +
+  theme(aspect.ratio = 1)
+
+p2 <-
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~yy, scales = 'free_y') +
+  labs(x = 'Length (cm)', y = 'Frequency', title = 'B) YFT') +
+  gg.theme+
+  theme(aspect.ratio = 1)
+p1
+p2
+
+```
+
+```{r}
+#| label: raw-len-by-area-yr
+#| fig-cap: "Raw length frequency data map by year. A) BET, B) YFT."
+#| fig-width: 8
+#| fig-height: 11
+
+p1 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  group_by(lat5,lon5, yy) |>
+  summarise(freq = sum(freq, na.rm = T)) |>
+  mutate(freq2 = ifelse(freq>10000, 10000, freq)) |>
+  #uncount(freq) |>
+  ggplot() +
+  aes(lon5, lat5, fill = freq2) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(100, 250), ylim = c(-40, 40)) +
+  facet_wrap(~yy) +
+  labs(x = 'Longitude', y = 'Latitude', fill = 'Frequency', title = 'A) BET') +
+  theme_classic()
+p2 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  group_by(lat5,lon5, yy) |>
+  summarise(freq = sum(freq, na.rm = T)) |>
+  mutate(freq2 = ifelse(freq>10000, 10000, freq)) |>
+  #uncount(freq) |>
+  ggplot() +
+  aes(lon5, lat5, fill = freq2) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(100, 250), ylim = c(-40, 40)) +
+  facet_wrap(~yy) +
+  labs(x = 'Longitude', y = 'Latitude', fill = 'Frequency', title = 'B) YFT') +
+  theme_classic()
+
+p1
+p2
+```
+
+\newpage
+
+### Sampling program 
+
+@len-origin-tbl shows the different programs and their sample sizes that have collected length sames for YFT and BET. In @raw-len-by-orig, we can see that some of these programs have more data than others, with some being very sparse. The distributions and temporal coverage of this data would likely need to be considered when modelling this data. This is especially apparent when we look at this data in space, @raw-len-by-area-origin shows strong temporal variability and resolution across the various sampling programs. The main source of length data include the SPC port sampling program (SPLL), Japan (JPLL), Korea (KRLL), Taiwain (TWLL) and Hawaii (HWOB).
+
+```{r}
+#| label: len-origin-tbl
+#| tbl-cap: "Description of length sampling programs and total sample sizes."
+
+library(flextable)
+LFs |>
+  group_by(ORIGIN_ID, ORIGINDESC) |>
+  summarise(n = sum(freq)) |>
+  flextable() |>
+  set_header_labels(ORIGIN_ID = "Origin ID",
+    ORIGINDESC = "Sampling program", n = "Sample n") |>
+   bold(part = "header") |>
+  theme_vanilla() |>
+  #word_wrap(part = "all", wrap = FALSE) |>
+  autofit() 
+  
+```
+
+```{r}
+#| label: raw-len-by-orig
+#| fig-cap: "Raw length frequency data by sampling program. A) BET, B) YFT."
+#| #| fig-width: 8
+#| fig-height: 11
+
+p1 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ORIGIN_ID, scales = 'free_y') +
+  labs(x = 'Length (cm)', y = 'Frequency', title = 'A) BET') +
+  gg.theme
+
+p2 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~ORIGIN_ID, scales = 'free_y') +
+  labs(x = 'Length (cm)', y = 'Frequency', title = 'B) YFT') +
+  gg.theme
+
+p1
+p2
+```
+
+```{r}
+#| label: raw-len-by-area-origin
+#| fig-cap: "Raw length frequency data mapped by sampling program. A) BET, B) YFT."
+#| fig-width: 8
+#| fig-height: 11
+
+p1 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  group_by(lat5,lon5, ORIGIN_ID) |>
+  summarise(freq = sum(freq, na.rm = T)) |>
+  mutate(freq2 = ifelse(freq>10000, 10000, freq)) |>
+  #uncount(freq) |>
+  ggplot() +
+  aes(lon5, lat5, fill = freq2) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(100, 250), ylim = c(-40, 40)) +
+  facet_wrap(~ORIGIN_ID) +
+  labs(x = 'Longitude', y = 'Latitude', fill = 'Frequency', title = 'A) BET') +
+  theme_classic()
+p2 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  group_by(lat5,lon5, ORIGIN_ID) |>
+  summarise(freq = sum(freq, na.rm = T)) |>
+  mutate(freq2 = ifelse(freq>10000, 10000, freq)) |>
+  #uncount(freq) |>
+  ggplot() +
+  aes(lon5, lat5, fill = freq2) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(100, 250), ylim = c(-40, 40)) +
+  facet_wrap(~ORIGIN_ID) +
+  labs(x = 'Longitude', y = 'Latitude', fill = 'Frequency', title = 'B) YFT') +
+  theme_classic()
+
+p1
+p2
+```
+
+\newpage
+
+### Flag
+
+@raw-len-by-flag shows the distribution of length frequencies by flag. Similar to above, length frequency distributions vary heavily across flag with some bimodal distributions present potentially suggesting changes in targeting.
+
+```{r}
+#| label: raw-len-by-flag
+#| fig-cap: "Raw length frequency data by flag. A) BET, B) YFT."
+#| fig-width: 8
+#| fig-height: 11
+
+
+p1 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~FLAG_ID, scales = 'free_y') +
+  labs(x = 'Length(cm)', y = 'Frequency', title = 'A) BET') +
+  gg.theme+
+  theme(aspect.ratio = 1)
+
+p2 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  uncount(freq) |>
+  ggplot() +
+  aes(len) +
+  geom_histogram(binwidth = 2) +
+  facet_wrap(~FLAG_ID, scales = 'free_y') +
+  labs(x = 'Length(cm)', y = 'Frequency', title = 'B) YFT') +
+  gg.theme+
+  theme(aspect.ratio = 1)
+
+p1
+p2
+```
+
+```{r}
+#| label: yr-flag-violin
+#| fig-cap: "Violin plots of length frequncies by year and flag. A) BET, B) YFT."
+#| fig-width: 8
+#| fig-height: 11
+
+tmp1 <-
+  LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  uncount(freq) |>
+  group_by(FLAG_ID, yy) |>
+  summarise(mn_len = mean(len, na.rm = T))
+
+p1 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  uncount(freq) |>
+  ggplot() +
+  geom_violin(aes(yy, len, group = yy)) +
+  geom_point(data = tmp1, aes(yy, mn_len, group = yy), col = 'red') +
+  facet_wrap(~FLAG_ID) +
+  labs(x = 'Year', y = 'Length(cm)', title = 'A) BET') +
+  gg.theme +
+  theme(axis.text.x = element_text(angle = 90), aspect.ratio = 1)
+
+tmp2 <-
+  LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  uncount(freq) |>
+  group_by(FLAG_ID, yy) |>
+  summarise(mn_len = mean(len, na.rm = T))
+
+p2 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  uncount(freq) |>
+  ggplot() +
+  geom_violin(aes(yy, len, group = yy)) +
+  geom_point(data = tmp2, aes(yy, mn_len, group = yy), col = 'red') +
+  facet_wrap(~FLAG_ID) +
+  labs(x = 'Year', y = 'Length(cm)', title = 'B) YFT') +
+  gg.theme +
+  theme(axis.text.x = element_text(angle = 90), aspect.ratio = 1)
+p1
+p2
+rm(tmp1, tmp2)
+```
+
+```{r}
+#| label: raw-len-by-area-flag
+#| fig-cap: "Raw length frequency data mapped by flag A) BET, B) YFT."
+#| fig-width: 8
+#| fig-height: 11
+
+p1 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'BET') |>
+  group_by(lat5,lon5, FLAG_ID) |>
+  summarise(freq = sum(freq, na.rm = T)) |>
+  mutate(freq2 = ifelse(freq>10000, 10000, freq)) |>
+  #uncount(freq) |>
+  ggplot() +
+  aes(lon5, lat5, fill = freq2) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(100, 250), ylim = c(-40, 40)) +
+  facet_wrap(~FLAG_ID) +
+  labs(x = 'Longitude', y = 'Latitude', fill = 'Frequency', title = 'A) BET') +
+  theme_classic()
+p2 <- 
+LFs |>
+  dplyr::filter(freq>0 & sp_code == 'YFT') |>
+  group_by(lat5,lon5, FLAG_ID) |>
+  summarise(freq = sum(freq, na.rm = T)) |>
+  mutate(freq2 = ifelse(freq>10000, 10000, freq)) |>
+  #uncount(freq) |>
+  ggplot() +
+  aes(lon5, lat5, fill = freq2) +
+  geom_tile() +
+  scale_fill_viridis_c() +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(100, 250), ylim = c(-40, 40)) +
+  facet_wrap(~FLAG_ID) +
+  labs(x = 'Longitude', y = 'Latitude', fill = 'Frequency', title = 'B) YFT') +
+  theme_classic()
+
+p1
+p2
+```
+
+```{r}
+head(LF_raw)
+
+x <- 
+LFs |>
+  dplyr::filter(!is.na(lat)) |>
+  group_by(ORIGIN_ID) |>
+  summarise(unique_lat = list(unique(lat))) |>
+  ungroup() |>
+  flextable()
+x <- 
+LFs |>
+    dplyr::filter(!is.na(lat) & !is.na(lon)) |>
+  group_by(yy, ORIGIN_ID) |>
+  summarise(
+    lat_res = {
+      lat_vals <- sort(as.numeric(unique(lat)))
+      if (length(lat_vals) > 1) {
+        res <- diff(lat_vals)
+        round(median(res), 3)  # Or use mean/res mode if preferred
+      } else {NA_real_}
+    },
+    lon_res = {
+      lon_vals <- sort(as.numeric(unique(lon)))
+      if (length(lon_vals) > 1) {
+        res <- diff(lon_vals)
+        round(median(res), 3)  # Or use mean/res mode if preferred
+      } else {NA_real_}
+    },.groups = "drop" )
+
+```

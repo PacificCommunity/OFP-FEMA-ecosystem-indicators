@@ -949,7 +949,7 @@ LW_outYYbin |>
 db1 <- "driver=SQL Server;server=NOUFAMESQL04;database=FISH_MASTER"
 channel <- odbcDriverConnect(db1)
 
-LF_raw <-sqlQuery(lmchannel,"
+LF_raw <-sqlQuery(channel,"
 SELECT   lf.ORIGIN_ID,
          ORIGINDESC,
          YR,
@@ -969,12 +969,12 @@ SELECT   lf.ORIGIN_ID,
          LEN,
          LSTRAT,
          FREQ
-FROM  [len].LF_MASTER lf inner join len.origin o on lf.origin_id = o.origin_id
+FROM  lf.LF_MASTER lf inner join ref.origin o on lf.origin_id = o.origin_id
 WHERE sp_id in ('BET', 'YFT', 'SKJ')
 order by 1,2,3,4,5,6,7,8,9,10,14,16", max=0, stringsAsFactors=FALSE) 
 odbcCloseAll()
 
-#save(LF_raw, file = paste0(data_wd, "biology/bio_len_freqs_raw.Rdata"))
+save(LF_raw, file = paste0(data_wd, "biology/bio_len_freqs_raw_07_07_25.Rdata"))
 
 # 6.2 Clean raw length data ----
 # Re-read in WCPFC-CA boundary info
@@ -993,11 +993,14 @@ LFs <-
                          str_detect(LAT_SHORT, "^[0-9]{2}N$") ~ as.numeric(substr(LAT_SHORT,1,2)),
                          .default = NA),
          lon = ifelse(Lon_h == "W", 360 - lon_c, lon_c)) |>
-  select(yy = YR, qtr = QTR, lat, lon, sp_code = SP_ID, len = LEN, freq = FREQ, gr = GR) %>%
+  dplyr::rename(yy = YR, qtr = QTR, sp_code = SP_ID, len = LEN, freq = FREQ, gr = GR) %>%
   filter(!is.na(lat), !is.na(lon) & yy %in% c(1990:2023)) %>%
   mutate(lat5 = floor(lat / 5) * 5 + 2.5, lon5 = floor(lon / 5) * 5 + 2.5) |>
   mutate(WCP_CA = point.in.polygon(lon, lat, coords[,1], coords[,2])) |>
   dplyr::filter(WCP_CA %in% c(1, 2))  |>
+  dplyr::filter(!(lat > 10 | lat < -15) & lon >= 130) |>
+  dplyr::filter(!((FLAG_ID == 'PH' & FLEET_ID == 'PH') |  (FLAG_ID == 'ID' & FLEET_ID == 'ID') | 
+                    (FLAG_ID == 'VN' & FLEET_ID == 'VN'))) |>
   select(-WCP_CA)
 
 # Check the data - binned to 2cm
