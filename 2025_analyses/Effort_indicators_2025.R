@@ -3,7 +3,7 @@
 #########################################################
 
 # Created on: 06/07/23
-# Latest update: 14/01/2025
+# Latest update: 10/07/2025
 # Created by: Jed Macdonald and Tiffany Vidal
 # Updated by Nick Hill 2025
 
@@ -16,30 +16,28 @@
 #    inside high seas areas (HS) between 1990 and 2022.
 
 # Nick Hill now updating these indicators based on updated needs.
+# Updated COG calculation to also get ellipse info
+# Updated maps and plots
+# Addition of data to 2024
 
 # 1. Preamble ----
+
+# Libraries
 library(tidyverse)
 #library(magrittr)
 #library(maps)
 #library(zoo)
-library(RODBC)
+#library(RODBC)
 library(sp)
-#library(mapdata)
-#library(formatR)
 library(RGeostats)
 library(RColorBrewer)
 
-# Set dir.
-#setwd('P:/OFPEMA/WCPFC/SC19/Ecosystem Indicators/Catch and distribution')
-#data_wd <- './2025_analyses/data/'
-#results_wd <- "./2025_analyses/results/"
+# Set directories
 data_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/data/'
 results_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/results/'
 
-# Set up mapping theme
-#newmap = fortify(maps::map(wrap=c(0,360), plot=FALSE, fill=TRUE))
+# base map
 map_bg <- map_data("world") #|>
-#coord_map(projection = 'mercator') 
 map_bg2 <- map_bg |>
   dplyr::mutate(long = long + 360, group = group + max(group) + 1) |>
   rbind(map_bg)
@@ -75,16 +73,16 @@ coords = wcp@polygons[[1]]@Polygons[[1]]@coords
 #NOUFAMESQL04 - new db - replace OFP_DBS with this
 db1 <- "driver=SQL Server;server=NOUFAMESQL04;database=FISH_MASTER"
 channel <- odbcDriverConnect(db1)
-
-## S_BEST purse seine catch and effort
-s_eff_query <- "
-SELECT      s.S_BEST_ID, YY, MM, FLAG_CODE, FLEET_CODE, lat_short, lon_short, ez_aprx_code, days,
-            sh.Schass_code, days_sch, sets_sch
-FROM        best.S_BEST_AGG s
-LEFT OUTER JOIN  best.S_BEST_AGG_SCHEFF sh on s.S_BEST_ID = sh.S_BEST_ID
-WHERE       s.GEAR_CODE like 'S' and YY>1989 and YY<=2023
-"
-s_eff <- sqlQuery(channel, s_eff_query, as.is=TRUE)
+ 
+# S_BEST purse seine catch and effort - updated query 2025
+# s_eff_query <- "
+# SELECT      s.S_BEST_GUID, YY, MM, FLAG_CODE, FLEET_CODE, lat_short, lon_short, ez_aprx_code, days,
+#             sh.Schass_code, days_sch, sets_sch
+# FROM        best.S_BEST_AGG s
+# LEFT JOIN  best.S_BEST_AGG_SCHEFF sh on s.S_BEST_GUID = sh.S_BEST_GUID
+# WHERE  YY>1989 and YY<=2024
+# "
+# s_eff <- sqlQuery(channel, s_eff_query, as.is=TRUE)
 
 # s_catch_query <- "
 # SELECT      s.S_BEST_ID, YY, MM, lat_short, lon_short, ez_aprx_code, days,
@@ -97,30 +95,31 @@ s_eff <- sqlQuery(channel, s_eff_query, as.is=TRUE)
 
 
 ## L_BEST longline catch and effort
-l_eff_query <- "
-SELECT      L_BEST_ID, YY, MM, lat_short, lon_short, hhooks, std_effort
-FROM        best.L_BEST_AGG
-WHERE       GEAR_CODE like 'L' and YY>1989 and YY<=2023
-"
-l_eff <- sqlQuery(channel, l_eff_query, as.is=TRUE)
+# l_eff_query <- "
+# SELECT      L_BEST_GUID, YY, MM, lat_short, lon_short, hhooks, std_effort
+# FROM        best.L_BEST_AGG
+# WHERE       YY>1989 and YY<=2024
+# "
+# l_eff <- sqlQuery(channel, l_eff_query, as.is=TRUE)
 
 # l_catch_query <- "
-# SELECT      l.L_BEST_ID, YY, MM, lat_short, lon_short, sp_code, sp_n, sp_mt
+# SELECT      l.L_BEST_GUID, YY, MM, lat_short, lon_short, sp_code, sp_n, sp_mt
 # FROM        best.L_BEST_AGG l
-# LEFT OUTER JOIN  best.L_BEST_AGG_CATCH c on l.L_BEST_ID = c.L_BEST_ID
+# LEFT OUTER JOIN  best.L_BEST_AGG_CATCH c on l.L_BEST_GUID = c.L_BEST_GUID
 # WHERE       l.GEAR_CODE like 'L' and YY>1989 and YY<=2022
 # "
 # l_catch <- sqlQuery(channel, l_catch_query, as.is=TRUE)
 
 # Close the database connection
 odbcCloseAll()
-write.csv(s_eff, paste0(data_wd, "effort/effort_PS_agg_data_1990-2023b.csv"), row.names=F) # write .csv to folder
-# write.csv(l_eff, paste0(data_wd, "effort/effort_LL_agg_data_1990-2023.csv"), row.names=F) # write .csv to folder
+#write.csv(s_eff, paste0(data_wd, "effort/effort_PS_agg_data_1990-2024.csv"), row.names=F) # write .csv to folder
+#write.csv(l_eff, paste0(data_wd, "effort/effort_LL_agg_data_1990-2024.csv"), row.names=F) # write .csv to folder
 
-# 2.1 Clean effort data ----
+# 3. Clean raw data ----
 
+# 3.1 PS data ----
 # Format data and filter out observations outside WCPFC-CA - PS
-s_eff <-read.csv(paste0(data_wd, "effort/effort_PS_agg_data_1990-2023b.csv")) 
+s_eff <-read.csv(paste0(data_wd, "effort/effort_PS_agg_data_1990-2024.csv")) 
 s_eff2 <- s_eff |>
   mutate(lat = as.numeric(substr(lat_short,1,2)), lat.dir = substr(lat_short,3,3), 
                   lon = as.numeric(substr(lon_short,1,3)), lon.dir = substr(lon_short,4,4),
@@ -137,34 +136,6 @@ s_eff2 <- s_eff2 |> dplyr::filter(lat >= -20 & lat <= 10 & lon >= 140 & lon <=21
   filter(!(FLAG_CODE %in% c('VN', 'EP') | (FLAG_CODE == 'PH' & FLEET_CODE == 'PH') |
                            (FLAG_CODE == 'ID' & FLEET_CODE == 'ID')))
 
-# Format data and filter out observations outside WCPFC-CA - LL
-#l_eff <-read.csv(paste0(data_wd, "effort/effort_LL_agg_data_1990-2023.csv")) 
-
-# l_eff2 <- l_eff |>
-#   mutate(lat = as.numeric(substr(lat_short,1,2)), lat.dir = substr(lat_short,3,3), 
-#                   lon = as.numeric(substr(lon_short,1,3)), lon.dir = substr(lon_short,4,4),
-#                   lat = ifelse(lat.dir=='S', lat*-1,lat), lon = ifelse(lon.dir=='W', 360-lon, lon)) %>% 
-#   select(-c(lon_short, lon.dir, lat_short, lat.dir)) %>% 
-#   mutate(hhoks = as.numeric(hhooks), std_effort = as.numeric(std_effort),
-#          WCP_CA = point.in.polygon(lon, lat, coords[,1], coords[,2])) |>
-#   dplyr::filter(WCP_CA %in% c(1, 2))  |>
-#   select(-WCP_CA)
-
-# 
-# l_eff2 |>
-#   group_by(lon, lat, YY) |>
-#   summarise(hhooks=log(sum(hhooks))) |> 
-#   ggplot() +
-#   aes(x = lon, y = lat, fill = hhooks) +
-#   geom_tile() +
-#   scale_fill_distiller(palette='Spectral') + 
-#   facet_wrap(~YY) + 
-#   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
-#   coord_sf(xlim = c(110, 220), ylim = c(-50, 50)) +
-#   gg.theme +
-#   labs(x = 'Longitude', y = 'Latitude', 
-#        fill='Effort (log hundred hooks)', title = 'Distribution of longline effort')
-
 # Set school association codes
 ASS <- c(4,3) # DFAD only
 AFAD = c(5) # anchored FAD
@@ -176,27 +147,28 @@ tmp1 = s_eff2 %>% filter(Schass_code %in% c(1,2,3,4,5,6,7)) %>%
   group_by(YY,MM, lat, lon, ez_aprx_code) %>%
   mutate(sets_sch  =  ifelse(sets_sch<0,0,sets_sch))  %>%
   summarise(days = sum(days_sch), sets = sum(sets_sch) ) %>% ungroup() |>
-  mutate(set_type = 'all')
+  mutate(set_type = 'ALL')
 tmp2 = s_eff2 %>% filter(Schass_code %in% ASS) %>%
   mutate(sets_sch  =  ifelse(sets_sch<0,0,sets_sch))  %>%
   group_by(YY,MM, lat, lon, ez_aprx_code) %>% 
   summarise(days = sum(days_sch), sets = sum(sets_sch) ) %>% ungroup() |>
-  mutate(set_type = 'ass')
+  mutate(set_type = 'DFAD')
 tmp3 = s_eff2 %>%  filter(Schass_code %in% UNA) %>% 
   mutate(sets_sch  =  ifelse(sets_sch<0,0,sets_sch))  %>%
   group_by(YY,MM, lat, lon, ez_aprx_code) %>% 
   summarise(days = sum(days_sch), sets = sum(sets_sch) ) %>% ungroup() |>
-  mutate(set_type = 'una')
+  mutate(set_type = 'UNA')
 
 s_eff3 <- bind_rows(tmp1,tmp2,tmp3) 
 
 rm(tmp1,tmp2,tmp3)
-save(s_eff3, file = paste0(data_wd, "effort/effort_seine_clean_data_upd.Rdata")) 
+#save(s_eff3, file = paste0(data_wd, "effort/effort_seine_clean_data_2024.Rdata")) 
 
-load(file = paste0(data_wd, "effort/effort_seine_clean_data_upd.Rdata"))
-# 
+load(file = paste0(data_wd, "effort/effort_seine_clean_data_2024.Rdata"))
+
+# Plot recent years to check if data looks right
 s_eff3 |>
-  dplyr::filter(set_type == 'all' & YY %in% c(2017:2023)) |>
+  dplyr::filter(set_type == 'ALL' & YY %in% c(2019:2024)) |>
   group_by(lon, lat, YY) |>
   summarise(sets=log(sum(sets,na.rm=T))) |>
   ggplot() +
@@ -212,6 +184,7 @@ s_eff3 |>
 
 # Dropping SE Asia effort
 s_eff3 |>
+  dplyr::filter(set_type == 'ALL') |>
   ggplot() +
   aes(lon, lat, fill = ez_aprx_code) +
   geom_tile() +
@@ -220,7 +193,56 @@ s_eff3 |>
   #scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
   gg.theme
 
-# 3. Centre of gravity indicator ----
+# Check effort looks right by year
+s_eff3 |>
+  dplyr::filter(set_type == 'ALL') |>
+  group_by(YY) |>
+  summarise(sets=sum(sets,na.rm=T)) |>
+  ggplot() +
+  aes(YY, sets) +
+  geom_line() +
+  theme_classic()
+
+# 3.2 Clean longline data ----
+l_eff2 <- l_eff |>
+   mutate(lat = as.numeric(substr(lat_short,1,2)), lat.dir = substr(lat_short,3,3), 
+                   lon = as.numeric(substr(lon_short,1,3)), lon.dir = substr(lon_short,4,4),
+                   lat = ifelse(lat.dir=='S', lat*-1,lat), lon = ifelse(lon.dir=='W', 360-lon, lon)) %>% 
+   select(-c(lon_short, lon.dir, lat_short, lat.dir)) |>
+   mutate(hhooks = as.numeric(hhooks), std_effort = as.numeric(std_effort),
+          WCP_CA = point.in.polygon(lon, lat, coords[,1], coords[,2])) |>
+   dplyr::filter(WCP_CA %in% c(1, 2))  |>
+   select(-WCP_CA)
+
+l_eff2 |>
+  dplyr::filter(YY %in% c(2019:2024)) |>
+   group_by(lon, lat, YY) |>
+   summarise(hhooks=log(sum(hhooks, na.rm = T))) |> 
+   ggplot() +
+   aes(x = lon, y = lat, fill = hhooks) +
+   geom_tile() +
+   scale_fill_distiller(palette='Spectral') + 
+   facet_wrap(~YY) + 
+   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+   coord_sf(xlim = c(110, 220), ylim = c(-50, 50)) +
+   gg.theme +
+   labs(x = 'Longitude', y = 'Latitude', 
+        fill='Effort (log hundred hooks)', title = 'Distribution of longline effort')
+
+l_eff2 |>
+  group_by(YY) |>
+  summarise(hhooks=sum(hhooks, na.rm = T)) |> 
+  ggplot() +
+  aes(YY, hhooks/1000) +
+  geom_line() +
+  gg.theme +
+  ylim(0,15000)
+
+save(l_eff2, file = paste0(data_wd, "effort/effort_LL_clean_data_2024.Rdata")) 
+
+# 4. Centre of gravity PS indicator ----
+# Here we calculate COG by both set type and ENSO event
+# This code and functions have been updated for 2025
 library(magrittr)
 
 # Updated COG function that also pulls ellipse data
@@ -273,100 +295,47 @@ ellipse_area <- function(width, height) {
   pi * a * b
 }
 
-# COG function old
-# ann.cg.inert = function(dat, effort, lab){
-#   cgi = c()
-#   
-#   for(i in 1:length(unique(dat$YY))){
-#     CG = dat %>% filter(YY==unique(YY)[i]) %>% select(lon,lat,effort,YY)
-#     names(CG)[3] = 'effort'
-#     CG %<>% group_by(lon,lat) %>% summarize(z=sum(as.numeric(effort),na.rm=T))
-#     db = db.create(x1=CG$lon, x2=CG$lat, z1=CG$z)
-#     projec.define(projection="mean",db=db)
-#     
-#     projec.toggle(0)
-#     CG = SI.cgi(db, flag.plot=F)
-#     cgi = rbind(cgi, c("yy"=unique(dat$YY)[i], "CG"=CG$center,
-#                        "inertia"=CG$inertia, "iso"=CG$iso))
-#   }
-#   cgi %<>% data.frame() %>% rename(lon=CG1, lat=CG2)
-#   return(cgi)
-# }
-
-# s_eff_COGs <- 
-#   s_eff3 |>
-#   #dplyr::filter(ez_aprx_code != 'ID' & lat >= -20 & lat <= 20) |>
-#   group_by(set_type) |>
-#   nest() |>
-#   mutate(cgi = purrr:::map(data, ~ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) |>
-#   dplyr::select(-data) |>
-#   unnest(cols = c('cgi'))
-
-# 3.1 Purse seine COG indicator ----
-# Extract COG information
-s_eff_COGs <- 
+# 4.1 Purse seine COG indicator by set ----
+# Extract COG information by set type
+s_eff_COGs_set <- 
   s_eff3 %>%
-  # filter(ez_aprx_code != 'ID' & lat >= -20 & lat <= 20) %>%
-  group_by(set_type) %>%
-  nest() %>%
-  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) %>%
-  select(-data) %>%
-  unnest(cols = c(cgi)) %>%
-  mutate(
-    area_m2 = ellipse_area(width, height),
-    area_km2 = area_m2 / 1e6  # optional: convert to square kilometers
-  )
-
-save(s_eff_COGs, file = paste0(data_wd, "effort/effort_seine_COGs.Rdata"))
-#load(file = paste0(data_wd, "effort/effort_seine_COGs.Rdata"))
-
-# Extract again in projected space for area calculations
-library(sf)
-s_eff3_sf <- st_as_sf(s_eff3, coords = c("lon", "lat"), crs = 4326) # WGS84
-s_eff3_sf <- st_transform(s_eff3_sf, crs = 3857) # Web Mercator (meters)
-
-# Then extract back the projected lon/lat as x/y in meters:
-s_eff3_proj <- s_eff3_sf %>%
-  mutate(lon = st_coordinates(.)[,1],
-         lat = st_coordinates(.)[,2]) %>%
-  st_drop_geometry()
-
-s_eff_COGs_proj <- 
-  s_eff3_proj %>%
-  group_by(set_type) %>%
-  nest() %>%
-  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) %>%
-  select(-data) %>%
-  unnest(cols = c(cgi)) %>%
+  group_by(set_type) |>
+  nest() |>
+  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) |>
+  select(-data) |>
+  unnest(cols = c(cgi)) |>
   mutate(area_m2 = ellipse_area(width, height), area_km2 = area_m2 / 1e6)
 
-# 3.2 PS COG plots ----
-library(ggforce)
-load(file = paste0(data_wd, "effort/effort_seine_COGs.Rdata"))
+save(s_eff_COGs_set, file = paste0(data_wd, "effort/effort_seine_COGs_set.Rdata"))
+#load(file = paste0(data_wd, "effort/effort_seine_COGs_set.Rdata"))
 
-# PS COG map with ellipses
+# Plot results
+library(ggforce)
+
+# PS COG map with ellipses by set
 p <- 
-s_eff_COGs |>
+  s_eff_COGs_set |>
   ggplot() +
   geom_ellipse(aes(x0 = lon, y0 = lat, a = width / 2,  b = height / 2,        
-    angle = angle * pi / 180,fill = yy), alpha = 0.2, col = NA) + 
+                   angle = angle * pi / 180,fill = yy), alpha = 0.2, col = NA) + 
   geom_point(aes(x = lon, y = lat, fill = yy), size = 3, shape = 21, col = 'black') +
   geom_path(aes(x = lon, y = lat, color = yy)) +
   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
   coord_sf(xlim = c(120, 190), ylim = c(-10, 10)) +
   scale_color_distiller(palette = 'RdYlBu', direction = -1) +
   scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
+  geom_text(data = s_eff_COGs_set %>% filter(yy %in% c(1990, 2024)),
+            aes(x = lon, y = lat, label = yy), color = "black", size = 3, vjust = -0.5) +
   facet_wrap(~set_type, ncol = 1) +
-  labs(#title = "Center of Gravity with Ellipse of Effort Spread",
-       x = "Longitude", y = "Latitude", col = 'Year', fill = 'Year') +
+  labs(x = "Longitude", y = "Latitude", col = 'Year', fill = 'Year') +
   gg.theme +
   theme(legend.position = 'bottom', legend.text = element_text(angle = 90))
 p
-ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_map_ellipses.png'),height = 10, width = 8, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_set_map_ellipses.png'),height = 10, width = 8, units = "in", dpi = 200)
 
-# PS COG map without ellipses
+# PS COG map without ellipses by set
 p <- 
-  s_eff_COGs |>
+  s_eff_COGs_set |>
   ggplot() +
   geom_point(aes(x = lon, y = lat, fill = yy), size = 3, shape = 21, col = 'black') +
   geom_path(aes(x = lon, y = lat, color = yy)) +
@@ -374,7 +343,7 @@ p <-
   coord_sf(xlim = c(120, 180), ylim = c(-10, 10)) +
   scale_color_distiller(palette = 'RdYlBu', direction = -1) +
   scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
-  geom_text(data = s_eff_COGs %>% filter(yy %in% c(1990, 2000, 2010, 2020, 2023)),
+  geom_text(data = s_eff_COGs_set %>% filter(yy %in% c(1990, 2000, 2010, 2020, 2024)),
             aes(x = lon, y = lat, label = yy), color = "black", size = 3, vjust = -0.5) +
   facet_wrap(~set_type, ncol = 1) +
   labs(#title = "Center of Gravity with Ellipse of Effort Spread",
@@ -382,13 +351,155 @@ p <-
   gg.theme +
   theme(legend.position = 'bottom', legend.text = element_text(angle = 90))
 p
-ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_map.png'),height = 10, width = 8, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_set_map.png'),height = 10, width = 8, units = "in", dpi = 200)
 
+# 4.2 Purse seine COG indicator by enso ----
 
+# Get ONI data from NOAA website
+# url <- "https://psl.noaa.gov/data/correlation/oni.data"
+# destfile <- "../data/oni.data"
+# download.file(url, destfile, mode = "wb")
+destfile <- paste0(data_wd, 'long_deviance/oni.data.txt')
+
+# Define ENSO event function
+get_persistent_enso <- function(enso_vec, min_months = 5) {
+  rle_out <- rle(as.character(enso_vec))  # Ensure character
+  valid <- rle_out$lengths >= min_months & rle_out$values != "neutral"
+  
+  persistent <- rep("neutral", length(enso_vec))
+  idx <- 1
+  for (i in seq_along(rle_out$lengths)) {
+    len <- rle_out$lengths[i]
+    if (valid[i]) {
+      persistent[idx:(idx + len - 1)] <- rle_out$values[i]
+    }
+    idx <- idx + len
+  }
+  return(persistent)
+}
+
+# Tidy data file
+oni_data <- read.table(destfile, header = FALSE, fill = TRUE)[-1,] |>
+  setNames(c("year", paste0('M',c(1:12)))) |>
+  dplyr::filter(year %in% c(1950:2025)) |>
+  mutate(across(starts_with("M"), as.numeric)) |>
+  pivot_longer(-year, names_to = 'month', values_to = 'oni') |>
+  mutate(month = as.numeric(str_remove(month, "M")),
+         year = as.numeric(year),
+         oniF = as.factor(ifelse(oni >= 0.5, "elnino", 
+                                 ifelse(oni <= -0.5, "lanina", "neutral")))) |>
+  dplyr::filter(oni != -99.9 & year >= 1990) |>
+  dplyr::rename(yy = year, mm = month) |>
+  arrange(yy, mm) |>
+  mutate(enso = get_persistent_enso(oniF),
+    enso = factor(enso, levels = c("neutral", "elnino", "lanina")),
+    enso_event = paste0(enso, '_', yy)) 
+
+# Here, we get a COG for enso events combined - this will form our ellipse in a plto below
+s_eff_COGs_enso <- 
+  s_eff3 |>
+  dplyr::filter(set_type == 'ALL') |>
+  left_join(oni_data, by = c('YY' = 'yy', 'MM' = 'mm')) |>
+  dplyr::rename(yy = YY) |>
+  mutate(YY = as.integer(case_when(enso == 'neutral' ~ 1,
+                                   enso == 'lanina' ~ 2,
+                                   enso == 'elnino' ~ 3))) |>
+  #group_by(oniF) |>
+  nest() |>
+  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) |>
+  select(-data) |>
+  unnest(cols = c(cgi)) |>
+  mutate(area_m2 = ellipse_area(width, height), area_km2 = area_m2 / 1e6,
+         enso = case_when(yy ==1 ~ 'neutral',
+                          yy == 2 ~ 'la nina',
+                          yy == 3 ~ 'el nino')) |>
+  dplyr::rename(YY = yy)
+
+save(s_eff_COGs_enso, file = paste0(data_wd, "effort/effort_seine_COGs_enso.Rdata"))
+#load(file = paste0(data_wd, "effort/effort_seine_COGs.Rdata"))
+
+ # PS COG map with ellipses by enso
+# p <- 
+#   s_eff_COGs_enso |>
+#   ggplot() +
+#   geom_ellipse(aes(x0 = lon, y0 = lat, a = width / 2,  b = height / 2,        
+#                    angle = angle * pi / 180,fill = enso), alpha = 0.2, col = NA) + 
+#   geom_point(aes(x = lon, y = lat, fill = enso), size = 3, shape = 21, col = 'black') +
+#   geom_path(aes(x = lon, y = lat, color = enso)) +
+#   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+#   coord_sf(xlim = c(120, 190), ylim = c(-10, 10)) +
+#   scale_color_brewer(palette = 'Set1') +
+#   scale_fill_brewer(palette = 'Set1') +
+#   labs(x = "Longitude", y = "Latitude", col = 'ENSO', fill = 'ENSO') +
+#   gg.theme +
+#   theme(legend.position = 'bottom')
+# p
+# ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_enso_map_ellipses.png'),height = 10, width = 8, units = "in", dpi = 200)
+
+# Now we want a COG for each enso event (eg el nino 1998) in chrono order
+# For function to work we need to convert enso event to a numeric
+
+tmp  <- 
+  s_eff3 |>
+  dplyr::filter(set_type == 'ALL') |>
+  left_join(oni_data, by = c('YY' = 'yy', 'MM' = 'mm')) |>
+  mutate(enso_event = as.factor(enso_event)) %>%
+  arrange(YY, MM, enso_event) |>
+  mutate( enso_event = fct_reorder(enso_event, YY, .fun = min),
+    enso_event_id = as.integer(enso_event))
+
+# extract COGs
+s_eff_COGs_enso2 <- 
+  tmp %>%
+  rename(yy = YY) %>%  # keep original year if needed
+  rename(YY = enso_event_id) %>%
+  nest() %>%
+  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) %>%
+  select(-data) %>%
+  unnest(cgi) %>%
+  rename(enso_event_id = yy) 
+
+# Recombine COG  back to data
+event_lookup <- tmp %>%
+  select(enso_event, enso_event_id) %>%
+  distinct()
+
+# Join back
+s_eff_COGs_enso2 <- s_eff_COGs_enso2 %>%
+  left_join(event_lookup, by = "enso_event_id")
+save(s_eff_COGs_enso2, file = paste0(data_wd, "effort/effort_seine_COGs_enso2.Rdata"))
+
+# Plot COG of each enso event through time with overall ellipses
+p <- 
+s_eff_COGs_enso2 |>
+  left_join(oni_data, by = c('enso_event')) |>
+  mutate(enso = case_when(enso == 'elnino' ~ 'el nino',
+                          enso == 'lanina' ~ 'la nina',
+                          enso == 'neutral' ~ 'neutral')) |>
+  #arrange(enso_event, yy, mm) |> 
+  ggplot() +
+  geom_ellipse(data = s_eff_COGs_enso, aes(x0 = lon, y0 = lat, a = width / 2,  b = height / 2,        
+                   angle = angle * pi / 180,fill = enso), alpha = 0.2, col = NA) + 
+  geom_point(aes(x = lon, y = lat, fill = enso), size = 3, shape = 21, col = 'black') +
+  #geom_path(aes(x = lon, y = lat, col = enso_event_id)) +
+  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
+  coord_sf(xlim = c(120, 190), ylim = c(-10, 10)) +
+  geom_text(data = s_eff_COGs_enso2 %>% filter(enso_event %in% c('neutral_1991', 'elnino_2023',
+                                                                 'elnino_2019', 'lanina_2009')),
+            aes(x = lon, y = lat, label = enso_event), color = "black", size = 3, vjust = -0.5) +
+  scale_color_brewer(palette = 'Set1') +
+  scale_fill_brewer(palette = 'Set1') +
+  labs(x = "Longitude", y = "Latitude", col = 'ENSO', fill = 'ENSO') +
+  gg.theme +
+  theme(legend.position = 'bottom')
+p
+ggsave(p, file = paste0(results_wd, 'effort/effortPS_COG_enso_map_ellipses2.png'),height = 10, width = 8, units = "in", dpi = 200)
+
+# 4.3 COG line plots ----
 
 # Extract COG means for plotting
 COG_mns <- 
-  s_eff_COGs |>
+  s_eff_COGs_set |>
   dplyr::filter(yy %in% c(1990:2000)) |>
   group_by(set_type) |>
   dplyr::summarise(mn_lon = mean(lon[set_type == 'all']),
@@ -398,7 +509,7 @@ COG_mns <-
 # Plot longitude COG on lineplot
 library(zoo)
 p <- 
-  s_eff_COGs |>
+  s_eff_COGs_set |>
   dplyr::arrange(yy) |>
   dplyr::group_by(set_type) |>
   dplyr::mutate(rolling_lon = zoo::rollapply(lon, width = 3, FUN = mean, align = "center", fill = NA)) |> # Centered 3-year rolling mean
@@ -413,7 +524,7 @@ p <-
   scale_color_brewer(palette = 'Set1') +
   geom_abline(data = COG_mns, aes(slope=0, intercept = mn_lon), color='black') +
   labs(x = 'Year', y = 'Longitude', col = 'Set type') +
-  scale_x_discrete(breaks = seq(min(s_eff_COGs$yy), max(s_eff_COGs$yy), by = 5)) +  # Show every 5th year
+  scale_x_discrete(breaks = seq(min(s_eff_COGs_set$yy), max(s_eff_COGs_set$yy), by = 5)) +  # Show every 5th year
   ggtitle("Longitudinal centre of gravity of PS effort") +
   ylim(140,180) +
   gg.theme +
@@ -423,7 +534,7 @@ p
 
 # Plot latitude COG on line plot
 p <- 
-  s_eff_COGs |>
+  s_eff_COGs_set |>
   #unnest(cols = c('cgi_ass')) |>
   #dplyr::filter(set_type == 'all') |>
   ggplot() +
@@ -437,7 +548,7 @@ p <-
   scale_color_brewer(palette = 'Set1') +
   geom_abline(data = COG_mns, aes(slope=0, intercept = mn_lat), color='black') +
   labs(x = 'Year', y = 'Latitude', col = 'Set type') +
-  scale_x_discrete(breaks = seq(min(s_eff_COGs$yy), max(s_eff_COGs$yy), by = 5)) +  # Show every 5th year
+  scale_x_discrete(breaks = seq(min(s_eff_COGs_set$yy), max(s_eff_COGs_set$yy), by = 5)) +  # Show every 5th year
   ggtitle("Latitudinal centre of gravity of PS effort") +
   gg.theme +
   theme(legend.position = 'bottom')
@@ -446,7 +557,7 @@ p
 
 # Plot inertia (measure of spread)
 p <- 
-  s_eff_COGs |>
+  s_eff_COGs_set |>
   ggplot() +
   aes(yy, inertia, group = set_type, col = set_type) + #reorder(yy, desc(yy)),
   geom_line() +
@@ -455,12 +566,37 @@ p <-
   scale_color_brewer(palette = 'Set1') +
   geom_abline(data = COG_mns, aes(slope=0, intercept = mn_inertia), color='black') +
   labs(x = 'Year', y = 'Inertia', col = 'Set type') +
-  scale_x_discrete(breaks = seq(min(s_eff_COGs$yy), max(s_eff_COGs$yy), by = 5)) +  # Show every 5th year
+  scale_x_discrete(breaks = seq(min(s_eff_COGs_set$yy), max(s_eff_COGs_set$yy), by = 5)) +  # Show every 5th year
   ggtitle("Centre of gravity inertia of PS effort") +
   gg.theme +
   theme(legend.position = 'bottom')
 p
 #ggsave(p, file = paste0(results_wd, 'effort/effort_COGinert_PSs_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+
+# 5. Extract ellipse area as a fleet area indicator ----
+# Use COG ellipse area as an indicator of fleet area
+
+# Recalculate COG and ellipse size in km projection
+# Extract again in projected space for area calculations
+library(sf)
+s_eff3_sf <- st_as_sf(s_eff3, coords = c("lon", "lat"), crs = 4326) # WGS84
+s_eff3_sf <- st_transform(s_eff3_sf, crs = 3857) # Web Mercator (meters)
+
+# Then extract back the projected lon/lat as x/y in meters:
+s_eff3_proj <- s_eff3_sf %>%
+  mutate(lon = st_coordinates(.)[,1],
+         lat = st_coordinates(.)[,2]) %>%
+  st_drop_geometry()
+
+# Calc COG
+s_eff_COGs_proj <- 
+  s_eff3_proj |>
+  group_by(set_type) |>
+  nest() |>
+  mutate(cgi = map(data, ~ ann.cg.inert(.x, effort = 'sets', lab = 'PS'))) |>
+  select(-data) |>
+  unnest(cols = c(cgi)) |>
+  mutate(area_m2 = ellipse_area(width, height), area_km2 = area_m2 / 1e6)
 
 # Plot ellipse area using projected (km2) COG data
 p <- 
@@ -478,17 +614,12 @@ p <-
   gg.theme +
   theme(legend.position = 'bottom')
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_COGellipse_area_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effort_COGellipse_area_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
-
-s_eff3 |>
-  ggplot() +
-  aes(YY, lon, group = YY) + 
-  
-
+# Zscore plot
 # COGs
 tmp <- 
-s_eff_COGs |>
+s_eff_COGs_set |>
   group_by(set_type) |>
   mutate(mn = mean(lon, na.rm=T), sd = sd(lon, na.rm=T)) |>
   group_by(set_type, yy) |>
@@ -508,13 +639,15 @@ tmp |>
   geom_hline(yintercept = 1.96, linetype = 'dashed') +
   geom_smooth(method = "lm", se = FALSE, aes(group = set_type, col = set_type), linetype = "dashed")
 
-
-# 3.2 Longline effort COG ----
+# 6 Longline effort COG indicator ----
 # Calculate COG, intertia
 
-l_eff_COGs <- ann.cg.inert(l_eff2, effort='hhooks', lab='ll_annual')
-#save(l_eff_COGs, file = paste0(data_wd, "effort/effort_LL_COGs.Rdata"))
+load(file = paste0(data_wd, "effort/effort_LL_clean_data_2024.Rdata")) 
 
+l_eff_COGs <- ann.cg.inert(l_eff2, effort='hhooks', lab='ll_annual')
+save(l_eff_COGs, file = paste0(data_wd, "effort/effort_LL_COGs.Rdata"))
+
+# Plot COGs
 COG_mns <- 
   l_eff_COGs |>
   dplyr::filter(yy %in% c(1990:2000)) |>
@@ -536,6 +669,7 @@ p <-
   scale_x_discrete(breaks = seq(min(l_eff_COGs$yy), max(l_eff_COGs$yy), by = 5)) +  # Show every 5th year
   ggtitle("Longitudinal centre of gravity of LL effort") +
   gg.theme 
+p
 ggsave(p, file = paste0(results_wd, 'effort/effort_COGlon_LL.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
 # Longline latitudinal COG
@@ -551,6 +685,7 @@ p <-
   #scale_x_discrete(breaks = seq(min(l_eff_COGs$yy), max(l_eff_COGs$yy), by = 5)) +  # Show every 5th year
   ggtitle("Latitudinal centre of gravity of LL effort") +
   gg.theme 
+p
 ggsave(p, file = paste0(results_wd, 'effort/effort_COGlat_LL.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
 # Longline COG inertia
@@ -566,77 +701,50 @@ p <-
   #scale_x_discrete(breaks = seq(min(l_eff_COGs$yy), max(l_eff_COGs$yy), by = 5)) +  # Show every 5th year
   ggtitle("Centre of gravity inertia of LL effort") +
   gg.theme 
+p
 ggsave(p, file = paste0(results_wd, 'effort/effort_COGinert_LL.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
-# 3.3 COG maps ----
-
-# COG with uncertainty
-s_eff_COGs |>
-  #dplyr::filter(set_type == 'all') |>
-  dplyr::arrange(yy) |>
-  #dplyr::mutate(id = 1:n()) |>
-  ggplot() +
-  aes(lon, lat, fill = yy, col = yy) +
-  geom_point(aes(size = iso), stroke = 1, shape = 21, col = 'black') +
-  geom_path(aes(col = yy)) +
-  facet_wrap(~set_type, nrow = 3) +
-  geom_text(data = s_eff_COGs %>% filter(yy %in% c(1990, 2000, 2010, 2020, 2023)),
-            aes(label = yy), color = "black", size = 3, vjust = -0.5) +
-  geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
-  coord_sf(xlim = c(120, 180), ylim = c(-10, 10)) +
-  scale_color_distiller(palette = 'RdYlBu', direction = -1) +
-  scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
-  labs(x = 'Longitude', y = 'Latitude', col = 'Year', fill = 'Year',
-       title = 'Centre of gravity of PS effort') +
-  gg.theme +
-  theme(legend.position = 'bottom',legend.text = element_text(angle = 90))
-
+# Longline COG map with ellipses
 p <- 
-  s_eff_COGs |>
-  #dplyr::filter(set_type == 'all') |>
-  dplyr::arrange(yy) |>
-  #dplyr::mutate(id = 1:n()) |>
+l_eff_COGs |>
   ggplot() +
-  aes(lon, lat, fill = yy, col = yy) +
-  geom_point(stroke = 1, shape = 21, size = 3, col = 'black') +
-  geom_path(aes(col = yy)) +
-  facet_wrap(~set_type, nrow = 3) +
-  geom_text(data = s_eff_COGs %>% filter(yy %in% c(1990, 2000, 2010, 2020, 2023)),
-           aes(label = yy), color = "black", size = 3, vjust = -0.5) +
+  geom_ellipse(aes(x0 = lon, y0 = lat, a = width / 2,  b = height / 2,        
+                   angle = angle * pi / 180,fill = yy), alpha = 0.2, col = NA) + 
+  geom_point(aes(x = lon, y = lat, fill = yy), size = 3, shape = 21, col = 'black') +
+  geom_path(aes(x = lon, y = lat, color = yy)) +
   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
-  coord_sf(xlim = c(120, 180), ylim = c(-10, 10)) +
+  coord_sf(xlim = c(120, 220), ylim = c(-30, 30)) +
   scale_color_distiller(palette = 'RdYlBu', direction = -1) +
   scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
-  labs(x = 'Longitude', y = 'Latitude', col = 'Year', fill = 'Year',
-       title = 'Centre of gravity of PS effort') +
+  geom_text(data = l_eff_COGs %>% filter(yy %in% c(1990, 2024)),
+            aes(x = lon, y = lat, label = yy), color = "black", size = 3, vjust = -0.5) +
+  labs(x = "Longitude", y = "Latitude", col = 'Year', fill = 'Year') +
   gg.theme +
-  theme(legend.position = 'bottom',legend.text = element_text(angle = 90))
+  theme(legend.position = 'bottom', legend.text = element_text(angle = 90))
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_COGPS_map_region68_set_type.png'),height = 11, width = 8, units = "in", dpi = 200)
+ggsave(p, file = paste0(results_wd, 'effort/effortLL_COG_map_ellipses.png'),height = 10, width = 8, units = "in", dpi = 200)
 
+# Longline COG map without ellipses
 p <- 
   l_eff_COGs |>
-  #dplyr::filter(set_type == 'all') |>
-  dplyr::arrange(yy) |>
-  #dplyr::mutate(id = 1:n()) |>
   ggplot() +
-  aes(lon, lat, fill = yy, col = yy) +
-  geom_point(stroke = 1, shape = 21, size = 3, col = 'black') +
-  geom_path(aes(col = yy)) +
-  geom_text(data = l_eff_COGs %>% filter(yy %in% c(1990, 2000, 2010, 2020, 2023)),
-            aes(label = yy), color = "black", size = 3, vjust = -0.5) +
+  # geom_ellipse(aes(x0 = lon, y0 = lat, a = width / 2,  b = height / 2,        
+  #                  angle = angle * pi / 180,fill = yy), alpha = 0.2, col = NA) + 
+  geom_point(aes(x = lon, y = lat, fill = yy), size = 3, shape = 21, col = 'black') +
+  geom_path(aes(x = lon, y = lat, color = yy)) +
   geom_polygon(data=map_bg2, aes(long, lat, group=group),fill = 'grey50', col = 'black') +
-  coord_sf(xlim = c(120, 200), ylim = c(-10, 10)) +
+  coord_sf(xlim = c(120, 220), ylim = c(-30, 30)) +
   scale_color_distiller(palette = 'RdYlBu', direction = -1) +
   scale_fill_distiller(palette = 'RdYlBu', direction = -1) +
-  labs(x = 'Longitude', y = 'Latitude', col = 'Year', fill = 'Year',
-       title = 'Centre of gravity of LL effort') +
+  geom_text(data = l_eff_COGs %>% filter(yy %in% c(1990, 2024)),
+            aes(x = lon, y = lat, label = yy), color = "black", size = 3, vjust = -0.5) +
+  labs(x = "Longitude", y = "Latitude", col = 'Year', fill = 'Year') +
   gg.theme +
-  theme(legend.position = 'bottom',legend.text = element_text(angle = 90))
+  theme(legend.position = 'bottom', legend.text = element_text(angle = 90))
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_COGLL_map.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+ggsave(p, file = paste0(results_wd, 'effort/effortLL_COG_map.png'),height = 10, width = 8, units = "in", dpi = 200)
 
-# 4.Area occupied  effort indicator ----
+# 7.Area occupied  effort indicator ----
 
 # Area occupied function
 area.occ = function(dat, effort, res){
@@ -658,7 +766,7 @@ area.occ = function(dat, effort, res){
   return(ao)
 }
 
-# Calculate area occupied
+# Calculate area occupied for PS
 s_eff_area<- 
   s_eff3 |>
   #dplyr::filter(lat >= -20 & lat <= 20) |>
@@ -668,6 +776,7 @@ s_eff_area<-
   dplyr::select(-data) |>
   unnest(area_occ)
 
+# Calculate area occupied for LL
 l_eff_area <- area.occ(l_eff2, effort='hhooks', res=5)
 
 area_mns <-
@@ -691,7 +800,7 @@ p <-
   gg.theme +
   theme(legend.position = 'bottom', aspect.ratio = 0.5) 
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_area_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effort_area_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
 area_mns <- mean(l_eff_area$area[l_eff_area$YY %in% c(1990:2000)])
 
@@ -707,20 +816,20 @@ p <-
        title = 'Area of LL effort (hooks)') +
   gg.theme
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_area_LL.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effort_area_LL.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
-# 5. Effort density maps indicator ----
+# 8. Effort density maps indicator ----
 
 #pal <- rev(c(brewer.pal(n = 9, name = "RdYlBu"), 'white'))
 pal2 <- rev(c(colorRampPalette(brewer.pal(9, 'Spectral'))(11), 'white'))
 
 p <- 
   s_eff3 |>
-  dplyr::filter(!(YY %in% c(2001:2018)) & set_type == 'una' ) |>
+  dplyr::filter(!(YY %in% c(2001:2019)) & set_type == 'UNA') |>
   group_by(lat, lon, YY, set_type) |>
   summarise(sets = sum(sets, na.rm=T)) |>
   mutate(YY2 = case_when(YY %in% c(1990:2000) ~ '1990:2000',
-                         YY %in% c(2019:2023) ~ as.character(YY))) |>
+                         YY %in% c(2020:2024) ~ as.character(YY))) |>
   group_by(lat, lon, YY2) |>
   summarise(sets2 = mean(sets, na.rm=T)) |>
   mutate(sets2 = round(sets2,0)) |>
@@ -747,16 +856,16 @@ tmp <-
   l_eff2 |>
   dplyr::filter(YY %in% c(1990:2000)) |>
   group_by(lat, lon, YY) |>
-  summarise(hhooks = round(sum(hhoks, na.rm=T),0)) |>
+  summarise(hhooks = round(sum(hhooks, na.rm=T),0)) |>
   group_by(lat,lon) |>
   summarise(hhooks = mean(hhooks)) |>
   mutate(YY2 = '1990-2000')
 
 p <- 
   l_eff2 |>
-  dplyr::filter(YY %in% c(2019:2023)) |>
+  dplyr::filter(YY %in% c(2020:2024)) |>
   group_by(lat, lon, YY) |>
-  summarise(hhooks = round(sum(hhoks, na.rm=T),0)) |>
+  summarise(hhooks = round(sum(hhooks, na.rm=T),0)) |>
   mutate(YY2 = as.character(YY)) |>
   dplyr::select(-YY) |>
   bind_rows(tmp) |>
@@ -777,11 +886,10 @@ p <-
   labs(x = 'Longitude', y = 'Latitude', title = "Longline hooks density") +
   gg.theme +
   theme(legend.position = 'none')
+p
 ggsave(p, file = paste0(results_wd, 'effort/effort_density_LL.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
-
-
-# 6. Proportion of sets >180 degrees indicator ----
+# 9. Proportion of sets >180 degrees indicator ----
 
 # Purse seine effort > 180 degrees by set type
 p <- 
@@ -804,13 +912,14 @@ p <-
   gg.theme +
   theme(legend.position = 'bottom')
 p
-ggsave(p, file = paste0(results_wd, 'effort/effort_180prop_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
+#ggsave(p, file = paste0(results_wd, 'effort/effort_180prop_PS_region68.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
 # Longline effort outside 20 degrees 
 p <- 
   l_eff2 |>
   group_by(YY) |>
-  summarise(hhooksT = sum(hhoks), hhooks20 = sum(hhoks[lat>= 20 | lat <= -20])) |>
+  summarise(hhooksT = sum(hhooks, na.rm = T), 
+            hhooks20 = sum(hhooks[lat>= 20 | lat <= -20], na.rm = T)) |>
   mutate(prop = hhooks20/hhooksT,
          mn_9020 = mean(prop[YY %in% c(1990:2000)]),
          prop_norm = prop-mn_9020) |>
@@ -819,15 +928,17 @@ p <-
   geom_line() +
   geom_point(size=0.8) +
   geom_smooth(method = 'lm', se=F, linetype='dashed', size=0.1) +
-  geom_hline(yintercept = 0) +
+  #geom_hline(yintercept = 0) +
   scale_color_brewer(palette = 'Set1') +
   labs(x = 'Year', y = 'Sets (%)', col = 'Set type',
        title = 'Proportion of longline sets outside 20 degrees latitude') +
   gg.theme +
-  theme(legend.position = 'bottom')
+  theme(legend.position = 'bottom') +
+  ylim(0,45)
+p
 ggsave(p, file = paste0(results_wd, 'effort/effort_20prop_LL2.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
-############################
+# 10. Area occupied percentile indicator explore ----
 
 s_eff3_gridded <-
   s_eff3 |>
@@ -896,28 +1007,8 @@ effort_area_by_group %>%
   geom_point() +
   scale_color_brewer(palette = 'Set1') +
   gg.theme +
-  labs(y = "Area occupied (x1000 km2)", x = 'Year') +
-  theme(legend.position = 'bottom')
+  labs(y = "Area occupied 90th percentile (x1000 km2)", x = 'Year') +
+  theme(legend.position = 'bottom') +
+  ylim(0,7000)
 
 
-
-###############################
-
-library(adehabitatHR)
-library(sp)
-
-# Your data must be spatial points with effort weights
-coords <- s_eff3 %>% dplyr::select(lon, lat)
-spdf <- SpatialPointsDataFrame(coords, data = s_eff3)
-
-# Weighted KDE
-kud <- kernelUD(spdf, weights = spdf$sets)
-
-# Get 50% and 90% contour polygons
-hr_50 <- getverticeshr(kud, percent = 50)
-hr_90 <- getverticeshr(kud, percent = 90)
-
-# Calculate area in km² (assuming projected CRS, otherwise approximate)
-library(raster)
-area_50 <- raster::area(hr_50) / 1e6  # convert m² to km²
-area_90 <- raster::area(hr_90) / 1e6
