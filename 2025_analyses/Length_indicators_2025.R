@@ -3,7 +3,7 @@
 ######################################################################
 
 ## Created on: 07/07/23
-## Latest update: 19/6/2025
+## Latest update: 11/7/2025
 ## Created by: Jed Macdonald
 ## Modified by:: Nick Hill
 
@@ -24,32 +24,33 @@
 ## Reduction in number of indicators and the type for new 'state of climate' report
 ## Addition of length proportion indicators
 ## further exploration of LW indicators
+## SPC databases made a shift to NOUFAMESQL04 in Jun 2025 - queries represent a shift
+## to this database where possible but may need furhter inspection (eg BioDaSys)
 
 # 1. Preamble ----
+
+# Libraries
 #library(RODBC) 
+library(tidyverse)
+library(sp)
+library(RColorBrewer)
+
 # library(grid)
 # library(reshape2)
 # library(tools)
 # library(stringi)
-library(tidyverse)
-# library(gdata)
-# library(magrittr)
-library(sp)
 # library(maps)
 # library(mapdata)
 # library(RGeostats)
-library(RColorBrewer)
+# library(gdata)
+# library(magrittr)
 
-#setwd('P:/OFPEMA/WCPFC/SC19/Ecosystem Indicators/Catch and distribution')
-# data_wd <- './2024_analyses/data/'
-# results_wd <- "./2024_analyses/results/"
+# Directories
 data_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/data/'
 results_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/results/'
 
 # Set up mapping theme
-#newmap = fortify(maps::map(wrap=c(0,360), plot=FALSE, fill=TRUE))
 map_bg <- map_data("world") #|>
-#coord_map(projection = 'mercator') 
 map_bg2 <- map_bg |>
   dplyr::mutate(long = long + 360, group = group + max(group) + 1) |>
   rbind(map_bg)
@@ -78,22 +79,15 @@ wcp = SpatialPolygons(list(Polygons(list(wcp), ID = "CA")),
 # Check that points are in WCPFC-CA
 coords = wcp@polygons[[1]]@Polygons[[1]]@coords
 
-## Simple subset function
-# substrLeft <- function(x, n){
-#   substr(x, 1, n)
-# }
-# 
-# substrRight<- function(x, n){
-#   substr(x, nchar(x)-n+1, nchar(x))
-# }
-
-#setwd("P:/OFPEMA/WCPFC/SC19/Ecosystem Indicators/Fish condition")
-
 # 2. Extract data from database ----
+
+# 2025 update - new fishmaster DB. Pull data from here now?
+db1 <- "driver=SQL Server;server=NOUFAMESQL04;database=BioDaSys"
+channel <- odbcDriverConnect(db1)
 
 ## BioDaSys data (housed in BioDaSys)
 myConn <- odbcDriverConnect(connection="Driver=SQL Server; Server=NOUSQL03; Database=BioDaSys; Trusted_Connection=yes;") 
-bio_LW <- sqlQuery(myConn,"
+bio_LW <- sqlQuery(channel,"
 SELECT  YEAR(SAMPLING_DATE) AS YY, 
         MONTH(SAMPLING_DATE) AS MM,
         'L' AS GEAR_CODE, 
@@ -118,8 +112,11 @@ write.csv(bio_LW, paste0(data_wd, "biology/bio_biodasys_lenwt_raw.csv"), row.nam
 
 
 ## Observer data (housed in OBSV_MASTER)
-myConn2 <- odbcDriverConnect(connection="Driver=SQL Server; Server=NOUSQL03; Database=OBSV_MASTER; Trusted_Connection=yes;")
-obsv_LW <- sqlQuery(myConn2, "
+#myConn2 <- odbcDriverConnect(connection="Driver=SQL Server; Server=NOUSQL03; Database=OBSV_MASTER; Trusted_Connection=yes;")
+db1 <- "driver=SQL Server;server=NOUFAMESQL04;database=OBSV_MASTER"
+channel2 <- odbcDriverConnect(db1)
+
+obsv_LW <- sqlQuery(channel2, "
 SELECT 	year(set_date) as YY,
 		    month(set_date) as MM,
 		    'L' AS GEAR_CODE, 
@@ -138,13 +135,15 @@ FROM	  obsv.trip ot
 WHERE   len_us > 0 and wt_whole > 0 
         and sp_code in ('YFT','BET', 'SKJ')
         order by 1,2,4,5,7", max=0, stringsAsFactors = FALSE)
-close(myConn2)
-write.csv(obsv_LW, paste0(data_wd, "biology/bio_obsv_lenwt_raw.csv"), row.names=F) # write .csv to folder
-
+close(channel2)
+write.csv(obsv_LW, paste0(data_wd, "biology/bio_obsv_lenwt_raw_2024.csv"), row.names=F) # write .csv to folder
 
 ## Port sampling data from prior to 2015 (housed in FISH_MASTER_work)
-myConn3 <- odbcDriverConnect(connection="Driver=SQL Server; Server=NOUSQL03; Database=FISH_MASTER_work; Trusted_Connection=yes;") 
-port1_LW<-sqlQuery(myConn3, "
+db3 <- "driver=SQL Server;server=NOUFAMESQL04;database=FISH_MASTER_work"
+channel3 <- odbcDriverConnect(db3)
+
+#myConn3 <- odbcDriverConnect(connection="Driver=SQL Server; Server=NOUSQL03; Database=FISH_MASTER_work; Trusted_Connection=yes;") 
+port1_LW<-sqlQuery(channel3, "
 SELECT  YEAR(case when TRIP_DATE is null then DATEADD(day,-7,T.START_DATE) else T.TRIP_DATE end) AS YY, 
 		MONTH(case when TRIP_DATE is null then DATEADD(day,-7,T.START_DATE) else T.TRIP_DATE end) AS MM, 
 		'L' AS GEAR_CODE, 
@@ -169,13 +168,14 @@ WHERE   c.sp_id in ('YFT','BET', 'SKJ')
 		AND Q_Reject <> 'Y' 
 		AND YEAR(start_date) < 2015 
 		and coalesce(wtkg,0) > 0", max=0, stringsAsFactors=FALSE)
-close(myConn3)
-write.csv(port1_LW, paste0(data_wd, "biology/bio_port1_lenwt_raw.csv"), row.names=F) # write .csv to folder
-
+close(channel3)
+write.csv(port1_LW, paste0(data_wd, "biology/bio_port1_lenwt_raw_2024.csv"), row.names=F) # write .csv to folder
 
 ## Port sampling data from 2015 to 2023 (housed in FISH_MASTER_agg)
-myConn4 <- odbcDriverConnect(connection="Driver=SQL Server; Server=NOUSQL03; Database=FISH_MASTER_agg; Trusted_Connection=yes;") 
-port2_LW<-sqlQuery(myConn4,"
+db4 <- "driver=SQL Server;server=NOUFAMESQL04;database=FISH_MASTER_agg"
+channel4 <- odbcDriverConnect(db4)
+
+port2_LW<-sqlQuery(channel4,"
 SELECT  YEAR(SAMPLE_DATE) AS YY, 
 		MONTH(SAMPLE_DATE) AS MM, 
 		'L' AS GEAR_CODE, 
@@ -194,14 +194,16 @@ where  coalesce(len,0) > 0
  and len_code = 'UF' 
  and sp_code in ('YFT','BET', 'SKJ')
  and YEAR(SAMPLE_DATE) >= 2015", max=0, stringsAsFactors=FALSE)
-close(myConn4) 
+close(channel4) 
 
-write.csv(port2_LW, paste0(data_wd, "biology/bio_port2_lenwt_raw.csv"), row.names=F) # write .csv to folder
+write.csv(port2_LW, paste0(data_wd, "biology/bio_port2_lenwt_raw_2024.csv"), row.names=F) # write .csv to folder
 
 
 ## SFFAII port sampling data (housed in tufman2)
-myConn5 <- odbcDriverConnect(connection="Driver=SQL Server; Server=NOUSQL03; Database=tufman2; Trusted_Connection=yes;") 
-SFFAII_LW<-sqlQuery(myConn5,"
+db5 <- "driver=SQL Server;server=NOUFAMESQL04;database=tufman2"
+channel5 <- odbcDriverConnect(db5)
+
+SFFAII_LW<-sqlQuery(channel5,"
 SELECT 
 		year(sample_date) as YY, 
 		month(sample_date) as MM, 
@@ -219,10 +221,10 @@ SELECT
 FROM [port].[conversion_factor] c
 		inner join [port].[conversion_factor_catch] cc on c.conversion_factor_id = cc.conversion_factor_id
 order by 1,2", max=0, stringsAsFactors=FALSE)
-close(myConn5)
+close(channel5)
 odbcCloseAll()
 
-write.csv(SFFAII_LW, paste0(data_wd, "biology/bio_sfaii_lenwt_raw.csv"), row.names=F) # write .csv to folder
+write.csv(SFFAII_LW, paste0(data_wd, "biology/bio_sfaii_lenwt_raw_2024.csv"), row.names=F) # write .csv to folder
 
 #  3. Clean datasets ----
 
@@ -250,51 +252,6 @@ lw_outliers <- function(len, wt) {
   
   return(outlier_flag)
 }
-
-# Makes various length to wt conversion for YFT, BET and SKJ
-# gutted_2_whole_wt <- function(wt, spp, wt_code, seed = 31500) {
-#   # what is NM weight code?
-#   out <- NA
-#   set.seed(seed)
-#   
-#   if (is.na(wt) | is.na(spp) | is.na(wt_code)) {
-#     return(NA)
-#   }
-#   
-#   # BET
-#   if (spp == 'BET') {
-#     if (wt_code == "WW") { out <- wt }
-#     else if(wt_code == "WW") {out <- wt}
-#     else if(wt_code == "GG") {out <- 1.1616911*(wt+(runif(1,0,1)-0.5))^0.9817353}
-#     else if(wt_code == "GO") {out <- 1.06*wt}
-#     else if(wt_code == "GT") {out <- 1.3264*(wt+(runif(1,0,1)-0.5))^0.969}
-#     else if(wt_code %in% c("GH", "GX")) {out <- 1.25*wt}
-#   }
-#   
-#   # YFT
-#   if (spp == 'YFT') {
-#     if (wt_code == "WW") { out <- wt }
-#     else if (wt_code == "GG") { out <- 1.1821032 * (wt + (runif(1, 0, 1) - 0.5))^0.9754946 }
-#     else if (wt_code == "GT") { out <- 1.2988 * (wt + (runif(1, 0, 1) - 0.5))^0.968 }
-#     else if (wt_code == "GH") { out <- 1.22 * wt }
-#     else if (wt_code == "GO") { out <- 1.06 * wt }
-#     else if (wt_code == "GX") { out <- 1.23 * wt }
-#   }
-#   
-#   # SKJ
-#   if (spp == 'SKJ') {
-#     if (wt_code == "WW") { out <- wt }
-#     else if (wt_code == "GG") { out <- 1.14 * wt }
-#     else if (wt_code == "GX") { out <- 1.35 * wt }
-#     else if (wt_code == "GH") { out <- 1.33 * wt }
-#   }
-#   
-#   if (is.na(out)) {
-#     return(NA)
-#   }
-#   
-#   return(out)
-# }
 
 # NH outlier removal based on plotting raw lenwt data and removing points
 # that are overly heavy for their lengh using lenwt ratio
@@ -350,13 +307,14 @@ gutted_2_whole_wt <- function(wt, spp, wt_code, seed = 31500) {
 }
 
 # 3.1 Biodasys dataset ----
+# Not updated as of Jul 2025 with new DB
 bio_LW <- read.csv(paste0(data_wd, "biology/bio_biodasys_lenwt_raw.csv"))
 
 bio_LW2 <- bio_LW |>
   dplyr::filter(GEAR_CODE == 'L' & YY %in% c(1990:2023)) |>
   mutate(WCP_CA = point.in.polygon(lond, latd, coords[,1], coords[,2])) |>
   dplyr::filter(WCP_CA %in% c(1, 2))  |>
-  select(-WCP_CA) |>
+  dplyr::select(-WCP_CA) |>
   #rowwise() |>
   mutate(WW_kg = gutted_2_whole_wt(wt = wt_kg, spp = sp_code, wt_code = wt_code),
          WW_kg = ifelse(WW_kg<0.02, 1000*WW_kg, WW_kg),
@@ -374,7 +332,8 @@ bio_LW2 |>
 #save(bio_LW2, file = paste0(data_wd, "biology/bio_biodasys_lenwt_clean.Rdata"))
 
 # 3.2 Observer gen4 dataset ----
-obsv_LW <- read.csv(paste0(data_wd, "biology/bio_obsv_lenwt_raw.csv"))
+# Query updated, but data doesn't change from 1984-1997
+obsv_LW <- read.csv(paste0(data_wd, "biology/bio_obsv_lenwt_raw_2024.csv"))
 
 obsv_LW2 <-
   obsv_LW |>
@@ -396,7 +355,8 @@ obsv_LW2 <-
 #save(obsv_LW2, file = paste0(data_wd, "biology/bio_obsv_lenwt_clean.Rdata"))
 
 # 3.3 Port sampling dataset 1 ----
-port1_LW <- read.csv(paste0(data_wd, "biology/bio_port1_lenwt_raw.csv"))
+# query updated but data stops in 2014 so no new added
+port1_LW <- read.csv(paste0(data_wd, "biology/bio_port1_lenwt_raw_2024.csv"))
 
 # there were a number of outliers in the raw data, that almost looked like a 2nd LW curve for BET and YFT
 # A function (lw_outlier2) used the ratio of len to wt to ID and remove these outliers.
@@ -440,7 +400,8 @@ port1_LW2 <-
 #save(port1_LW2, file = paste0(data_wd, "biology/bio_port1_lenwt_clean.Rdata"))
 
 # 3.4 Port 2 data ----
-port2_LW <- read.csv(paste0(data_wd, "biology/bio_port2_lenwt_raw.csv"))
+# query updated and new data added as of Jul 2025
+port2_LW <- read.csv(paste0(data_wd, "biology/bio_port2_lenwt_raw_2024.csv"))
 
 port2_LW2 <- port2_LW |>
   mutate(latd = ifelse(str_detect(lat_short, "S"), 
@@ -463,8 +424,8 @@ port2_LW2 <- port2_LW |>
 #save(port2_LW2, file = paste0(data_wd, "biology/bio_port2_lenwt_clean.Rdata"))
 
 # 3.5 SFFAII dataset ----
-
-SFFAII_LW <- read.csv(paste0(data_wd, "biology/bio_sfaii_lenwt_raw.csv"))
+# query updated, but no new data pulled 2019-2023
+SFFAII_LW <- read.csv(paste0(data_wd, "biology/bio_sfaii_lenwt_raw_2024.csv"))
 
 SFFAII_LW2 <- SFFAII_LW |>
   dplyr::rename(WW_kg = sp_kg_landed, len = len_uf) |>
@@ -510,15 +471,16 @@ rm(tmp1,tmp2,tmp3,tmp4,tmp5)
 
 LW_data <-
   LW_data |>
-  dplyr::filter(!(sp_code == 'SKJ' & dataset == 'observer'))
+  dplyr::filter(!(sp_code == 'SKJ' & dataset == 'observer')) |>
+  dplyr::filter(YY >= 1990 & YY <= 2024)
 
-save(LW_data, file = paste0(data_wd, "biology/bio_combined_lenwt_clean.Rdata"))
+save(LW_data, file = paste0(data_wd, "biology/bio_combined_lenwt_clean2.Rdata"))
 
 # 4. Length-weight models ----
 #lms_list <- setNames(lms$lm, lms$Variable)
 
 # Load in cleaned LW data
-load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean.Rdata"))
+load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean2.Rdata"))
 
 # 4.1 Apply initial model to each spp and dataset ----
 # Apply model to each dataset and species
@@ -564,10 +526,12 @@ LW_data2 <-
   LW_out1 |>
   dplyr::filter(outlier == 0) |>
   dplyr::select(YY, sp_code, dataset, WW_kg, len)
-save(LW_data2, file = paste0(data_wd, "biology/bio_combined_lenwt_clean2.Rdata"))
+
+save(LW_data2, file = paste0(data_wd, "biology/bio_combined_lenwt_clean3.Rdata"))
 rm(LW_data, LW_mod1)
 
 # refit lw models
+load(paste0(data_wd, "biology/bio_combined_lenwt_clean3.Rdata"))
 LW_mod2 <-
   LW_out1 |>
   dplyr::filter(outlier == 0) |>
@@ -625,7 +589,7 @@ ggsave(p, file = paste0(results_wd, 'biology/biology_lenwt_curve.png'),height = 
 # Here, we refit LW model with cleaned data combining all datasets
 
 # Load in len-wt data that has all outliers removed
-load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean2.Rdata"))
+load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean3.Rdata"))
 
 # Fit lenwt models by species, combining all datasets
 Krels_mod <-
@@ -696,7 +660,7 @@ ggsave(p, file = paste0(results_wd, 'biology/biology_lenwt_species.png'),height 
 # This may be more sensitive to the indicator above.
 
 # Load in len-wt data that has all outliers removed
-load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean2.Rdata"))
+load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean3.Rdata"))
 
 # Fit lenwt models by species and year across all datasets
 LW_modYY <- 
@@ -842,7 +806,6 @@ LW_outYY |>
 p
 ggsave(p, file = paste0(results_wd, 'biology/biology_lenwt_species_lenquants2.png'),height = 8, width = 11, units = "in", dpi = 200)
 
-
 # Plotting different length classes by year to see if the prdicted weight hass changed
 p <- 
 LW_outYY %>%
@@ -889,7 +852,7 @@ LW_outYY %>%
 
 #5.1 Historical vs recent LWs
 # Load in len-wt data that has all outliers removed
-load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean2.Rdata"))
+load(file = paste0(data_wd, "biology/bio_combined_lenwt_clean3.Rdata"))
 
 # Fit lenwt models by species and year across all datasets
 LW_modYYbin <- 
@@ -978,7 +941,7 @@ save(LF_raw, file = paste0(data_wd, "biology/bio_len_freqs_raw_07_07_25.Rdata"))
 
 # 6.2 Clean raw length data ----
 # Re-read in WCPFC-CA boundary info
-load(file = paste0(data_wd, "biology/bio_len_freqs_raw.Rdata"))
+load(file = paste0(data_wd, "bio_len_freqs_raw_07_07_25.Rdata"))
 
 wcp_ca = read.csv("wcpfc_ca_stat_area.csv") 
 wcp = Polygon(wcp_ca) # Convert to spatial polygon
@@ -994,11 +957,11 @@ LFs <-
                          .default = NA),
          lon = ifelse(Lon_h == "W", 360 - lon_c, lon_c)) |>
   dplyr::rename(yy = YR, qtr = QTR, sp_code = SP_ID, len = LEN, freq = FREQ, gr = GR) %>%
-  filter(!is.na(lat), !is.na(lon) & yy %in% c(1990:2023)) %>%
+  filter(!is.na(lat), !is.na(lon) & yy %in% c(1990:2024)) %>%
   mutate(lat5 = floor(lat / 5) * 5 + 2.5, lon5 = floor(lon / 5) * 5 + 2.5) |>
   mutate(WCP_CA = point.in.polygon(lon, lat, coords[,1], coords[,2])) |>
   dplyr::filter(WCP_CA %in% c(1, 2))  |>
-  dplyr::filter(!(lat > 10 | lat < -15) & lon >= 130) |>
+  dplyr::filter(lat >= -20 & lat <= 10 & lon >= 140 & lon <=210) |>
   dplyr::filter(!((FLAG_ID == 'PH' & FLEET_ID == 'PH') |  (FLAG_ID == 'ID' & FLEET_ID == 'ID') | 
                     (FLAG_ID == 'VN' & FLEET_ID == 'VN'))) |>
   select(-WCP_CA)
@@ -1013,21 +976,21 @@ LFs |>
   facet_wrap(~sp_code, scales = 'free')
 
 # Load in len-wt data that has all outliers removed
-#save(LFs, file = paste0(data_wd, "biology/bio_len_freqs_clean.Rdata"))
+save(LFs, file = paste0(data_wd, "biology/bio_len_freqs_clean2.Rdata"))
 
 # 6.3 Mean length indicator ----
-load(file = paste0(data_wd, "biology/bio_len_freqs_clean.Rdata"))
+load(file = paste0(data_wd, "biology/bio_len_freqs_clean2.Rdata"))
 
 # Calculate some simple stats for plotting
 summ_stats <- LFs %>%
   dplyr::filter((sp_code == 'SKJ' & gr %in% c('L', 'S')) | (sp_code %in% c('BET', 'YFT') & gr %in% c('L')))  |>
   group_by(yy, sp_code) %>%
-  summarise(min_val = min(len),
-            q25 = quantile(len, 0.25),
-            median_val = median(len),
-            mean_val = mean(len),
-            q75 = quantile(len, 0.75),
-            max_val = max(len),
+  summarise(min_val = min(len, na.rm = T),
+            q25 = quantile(len, 0.25, na.rm = T),
+            median_val = median(len, na.rm = T),
+            mean_val = mean(len, na.rm = T),
+            q75 = quantile(len, 0.75, na.rm = T),
+            max_val = max(len, na.rm = T),
             n = n())
 
 # Number of length samples taken by sp and year
@@ -1041,8 +1004,8 @@ summ_stats |>
        title = 'Number of length samples taken by year and species') +
   gg.theme
 p
-#ggsave(p, file = paste0(results_wd, 'biology/biology_lens_sample_sizes.png'),
-#       height = 4, width = 5.5, units = "in", dpi = 200)
+ggsave(p, file = paste0(results_wd, 'biology/biology_lens_sample_sizes.png'),
+      height = 4, width = 5.5, units = "in", dpi = 200)
 
 # Fit lms to mean length data and extract slopes
 slopes <- LFs |>
@@ -1073,10 +1036,10 @@ mns <- LFs |>
   summarise(mn_len = round(mean(len, na.rm = T), 1)) |>
   mutate(y = c(200, 95, 200)*0.92)
 
-mns23 <- LFs |>
+mns24 <- LFs |>
   dplyr::filter((sp_code == 'SKJ' & gr %in% c('L', 'S')) | 
                   (sp_code %in% c('BET', 'YFT') & gr %in% c('L'))) |>
-  dplyr::filter(yy %in% c(2023)) |>
+  dplyr::filter(yy %in% c(2024)) |>
   uncount(freq) |>
   group_by(sp_code) |>
   summarise(mn_len = round(mean(len, na.rm = T), 1)) |>
@@ -1116,12 +1079,12 @@ summ_stats2 <- LFs %>%
          yy_grouped = factor(yy_grouped, levels = c("1990–2000", as.character(sort(unique(LFs$yy[LFs$yy > 2000])))))) |>
   uncount(freq) |> 
   group_by(yy_grouped, sp_code) %>%
-  summarise(min_val = min(len),
-            q25 = quantile(len, 0.25),
-            median_val = median(len),
-            mean_val = mean(len),
-            q75 = quantile(len, 0.75),
-            max_val = max(len),
+  summarise(min_val = min(len, na.rm = T),
+            q25 = quantile(len, 0.25, na.rm = T),
+            median_val = median(len, na.rm = T),
+            mean_val = mean(len, na.rm = T),
+            q75 = quantile(len, 0.75, na.rm = T),
+            max_val = max(len, na.rm = T),
             n = n())
 
 p <- 
@@ -1141,7 +1104,7 @@ p <-
                  width = 0.3, size = 1, color = 'black', inherit.aes = FALSE) +
   geom_text(data = L50s, aes(x = "1990–2000", y = y, label = paste0('L50=',L50, 'cm')), fontface = "bold", inherit.aes = FALSE,size = 4, hjust = 0) +
   geom_text(data = mns, aes(x = "1990–2000", y = y, label = paste0('1990-2000=',mn_len, 'cm')), fontface = "bold", inherit.aes = FALSE,size = 4, hjust = 0) +
-  geom_text(data = mns23, aes(x = "1990–2000", y = y, label = paste0('2023=',mn_len, 'cm')), fontface = "bold", inherit.aes = FALSE,size = 4, hjust = 0) +
+  geom_text(data = mns24, aes(x = "1990–2000", y = y, label = paste0('2024=',mn_len, 'cm')), fontface = "bold", inherit.aes = FALSE,size = 4, hjust = 0) +
   facet_wrap(~sp_code, scales = 'free_y', nrow = 3) +
   scale_fill_brewer(palette = 'Set1') +
   labs(x = 'Year', y = 'Length (cm)', fill = 'Species') +
@@ -1167,10 +1130,10 @@ LFs |>
   facet_wrap(~sp_code, scales = 'free', nrow=3) +
   geom_text(data = slopes, aes(x = 2015, y = 25, label = paste0("Slope: ", round(slope, 2))), 
             inherit.aes = FALSE, col = 'black', size = 3, hjust = 0) +
-  geom_text(data = mns[mns$yy_bin == '1990-2000',], aes(x = 2015, y = 55, label = paste0(yy_bin, ': ', round(mn_len, 1))), 
+  geom_text(data = mns, aes(x = 2015, y = 55, label = paste0('1990-2000: ', round(mn_len, 1))), 
             inherit.aes = FALSE, col = 'black', size = 3, hjust = 0) +
-  geom_text(data = mns[mns$yy_bin != '1990-2000',], aes(x = 2015, y = 40, label = paste0(yy_bin, ': ', round(mn_len, 1))), 
-            inherit.aes = FALSE, col = 'black', size = 3, hjust = 0) +
+   geom_text(data = mns24, aes(x = 2015, y = 40, label = paste0('2024: ', round(mn_len, 1))), 
+             inherit.aes = FALSE, col = 'black', size = 3, hjust = 0) +
   coord_cartesian(ylim = c(0, NA)) +  # Set ymin to 0 while keeping ymax free
   gg.theme +
   labs(x = 'Year', y = 'Length (cm)', col = 'Species',
@@ -1224,21 +1187,23 @@ LFs |>
   dplyr::filter((sp_code == 'SKJ' & gr %in% c('L', 'S')) | (sp_code %in% c('BET', 'YFT') & gr %in% c('L'))) |>
   left_join(L50s, by = 'sp_code') |>
   group_by(sp_code) |>
-  mutate(len20 = quantile(len[yy %in% c(1990:2000)], 0.2), mn_len = mean(len[yy %in% c(1990:2000)], na.rm=T),
-                     len80 = quantile(len[yy %in% c(1990:2000)], 0.8)) |>
+  mutate(len20 = quantile(len[yy %in% c(1990:2000)], 0.2, na.rm = T), mn_len = mean(len[yy %in% c(1990:2000)], na.rm=T),
+                     len80 = quantile(len[yy %in% c(1990:2000)], 0.8, na.rm = T)) |>
   group_by(sp_code, yy, len20, mn_len, len80, L50) |>
-  summarise(n = n(), prop20 = sum(len < len20)/n(),
-            propmn = sum(len > mn_len)/n(),
-            prop80 = sum(len > len80)/n(),
-            propL50 = sum(len > L50)/n()) |>
+  summarise(n = n(), prop20 = sum(len < len20, na.rm = T)/n(),
+            propmn = sum(len > mn_len, na.rm = T)/n(),
+            prop80 = sum(len > len80, na.rm = T)/n(),
+            propL50 = sum(len > L50, na.rm = T)/n()) |>
   ungroup() |>
-  #dplyr::select(yy, sp_code, prop20, propmn, prop80) |>
-  mutate(prop20_roll = rollmean(prop20, k = 3, fill = NA,align = "left"),
-         mn_len_roll = rollmean(propmn, k = 3, fill = NA,align = "left"),
-         prop80_roll = rollmean(prop80, k = 3, fill = NA, align = "left"),
-         propL50_roll = rollmean(propL50, k = 3, fill = NA, align = "left")) |>
-  pivot_longer(-c(sp_code, yy, len20, mn_len, len80, n, prop20, propmn, prop80, propL50, L50), 
-               names_to = 'indicator', values_to = 'val')
+  group_by(sp_code) |>
+  arrange(yy, .by_group = TRUE) |>
+  mutate(prop20_roll  = zoo::rollmean(prop20,  k = 3, fill = NA, align = "center"),
+    mn_len_roll  = zoo::rollmean(propmn,  k = 3, fill = NA, align = "center"),
+    prop80_roll  = zoo::rollmean(prop80,  k = 3, fill = NA, align = "center"),
+    propL50_roll = zoo::rollmean(propL50, k = 3, fill = NA, align = "center")) |>
+  pivot_longer(cols = c(prop20_roll, mn_len_roll, prop80_roll, propL50_roll),
+    names_to = "indicator", values_to = "val") |>
+  ungroup()
 
 p <- 
   LFs2|>
@@ -1246,7 +1211,7 @@ p <-
   ggplot() +
   aes(x = yy, y = val*100, col = indicator) +
   geom_line() +
-  geom_point(size = 0.5) +
+  geom_point(size = 0.9) +
   facet_wrap(~sp_code, nrow = 3) +
   geom_smooth(method = "lm",se = FALSE, linetype = "dashed", linewidth = 0.5) +
   #scale_color_brewer(palette = 'Set1') + 
@@ -1260,7 +1225,8 @@ p <-
   coord_cartesian(ylim = c(0, NA)) +  # Set ymin to 0 while keeping ymax free
   labs(x = 'Year', y = 'Percentage (%)', col = 'Indicator') +
   gg.theme +
-  theme(aspect.ratio = 0.4, legend.position = 'bottom')
+  theme(aspect.ratio = 0.4, legend.position = 'bottom') +
+  xlim(1990, 2024)
 p
 ggsave(p, file = paste0(results_wd, 'biology/biology_lenprop_indicator3.png'),
        height = 11, width = 8, units = "in", dpi = 200)
@@ -1276,20 +1242,36 @@ mns <-
   summarise(mn_len = median(len[yy %in% c(1990:2000)], na.rm=T))
 
 # Ridgeplot by year and species with species mean length (1990:2000) plotted
-p <-
+# p <-
+# LFs |>
+#   dplyr::filter(gr == 'L' ) |>
+#   ggplot() +
+#   aes(x = len, y = yy, group = yy, fill = yy) + #after_stat(x)
+#   geom_density_ridges(rel_min_height = 0.01, scale  = 5) +
+#   facet_wrap(~sp_code, scales = 'free') +
+#   #stat_density_ridges(quantile_lines = TRUE, quantiles = c(0.5)) +
+#   #geom_density_ridges_gradient() +
+#   #scale_fill_viridis_c(name = "Length (cm)", option = "C")
+#   scale_fill_distiller(palette = 'Blues') +
+#   geom_vline(data = mns, aes(xintercept = mn_len), linetype = 'dashed') +
+#   labs(x = 'Length (cm)', y = 'Year', 
+#        title = 'Length frequency distribution') +
+#   gg.theme +
+#   theme(legend.position = 'none')
+# p
+
+p <- 
 LFs |>
-  dplyr::filter(gr == 'L' ) |>
-  ggplot() +
-  aes(x = len, y = yy, group = yy, fill = yy) + #after_stat(x)
-  geom_density_ridges(rel_min_height = 0.01, scale  = 5) +
+  filter(gr == 'L') |>
+  ggplot(aes(x = len, y = fct_rev(factor(yy)), group = yy, fill = yy)) +
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 0.5, 
+                      rel_min_height = 0.01, scale = 5) +
   facet_wrap(~sp_code, scales = 'free') +
-  #stat_density_ridges(quantile_lines = TRUE, quantiles = c(0.5)) +
-  #geom_density_ridges_gradient() +
-  #scale_fill_viridis_c(name = "Length (cm)", option = "C")
-  scale_fill_distiller(palette = 'Blues') +
   geom_vline(data = mns, aes(xintercept = mn_len), linetype = 'dashed') +
-  labs(x = 'Length (cm)', y = 'Year', 
-       title = 'Length frequency distribution') +
+  scale_fill_distiller(palette = 'Blues') +
+  scale_y_discrete(breaks = as.character(seq(1990, 2020, by = 10)),
+    labels = as.character(seq(1990, 2020, by = 10))) +
+  labs(x = 'Length (cm)', y = 'Year') +
   gg.theme +
   theme(legend.position = 'none')
 p
@@ -1299,6 +1281,20 @@ ggsave(p, file = paste0(results_wd, 'biology/biology_lenridges_indicator1.png'),
 
 # plot B - ridge plot with historical mean and most recent 5 yrs
 pal3 <- rev(c(brewer.pal(5, 'Blues'), 'grey50'))
+
+LFs |>
+  filter(gr == 'L') |>
+  ggplot(aes(x = len, y = fct_rev(factor(yy)), group = yy, fill = yy)) +
+  stat_density_ridges(quantile_lines = TRUE, quantiles = 0.5, 
+                      rel_min_height = 0.01, scale = 5) +
+  facet_wrap(~sp_code, scales = 'free') +
+  geom_vline(data = mns, aes(xintercept = mn_len), linetype = 'dashed') +
+  scale_fill_distiller(palette = 'Blues') +
+  scale_y_discrete(breaks = as.character(seq(1990, 2020, by = 10)),
+                   labels = as.character(seq(1990, 2020, by = 10))) +
+  labs(x = 'Length (cm)', y = 'Year') +
+  gg.theme +
+  theme(legend.position = 'none')
 
 p <- 
 LFs |>
@@ -1347,10 +1343,10 @@ LFs |>
   geom_vline(data = mns, aes(xintercept = mn_len), linetype = 'dashed') +
   geom_text(data = labs[labs$yr_bin == '1990-2000',],  aes(x = -Inf, y = Inf, label = paste("1990-2000:", n)), 
             inherit.aes = FALSE, color = 'black', size = 3, hjust = -0, vjust = 2) +
-  geom_text(data = labs[labs$yr_bin == '2023',],  aes(x = -Inf, y = Inf, label = paste("2023:", n)), 
+  geom_text(data = labs[labs$yr_bin == '2024',],  aes(x = -Inf, y = Inf, label = paste("2024:", n)), 
             inherit.aes = FALSE, color = 'black', size = 3, hjust = -0, vjust = 1) +
   labs(x = 'Length (cm)', y = 'Proportion of fish (%)', fill = '',
-       title = 'Historical vs 2023') +
+       title = 'Historical vs 2024') +
   gg.theme +
   theme(aspect.ratio = 0.3, legend.position = 'none')
 p

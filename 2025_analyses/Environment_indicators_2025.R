@@ -1,32 +1,38 @@
+#########################################################################
+# Environmental conditions at fishing locations - for SC21 climate indicators report
+#########################################################################
+
+# Created on: 06/03/25
+# Created by: Nick Hill
+# Modified by: Nick Hill
+
+# Aim: This is an exploratory script to look at the environment at fishing locations
+# to see if it is changing. ie: rather than model sst over time in the WCPO, we
+# look at sst at PS set locations as a way to make it more fishery relevant. These
+# are yet to make it into the report yet but are instructive.
+
 # 1. Preamble ----
+
+# Libraries
 library(tidyverse)
-#library(magrittr)
-#library(maps)
-#library(zoo)
-#library(RODBC)
 library(sp)
-#library(mapdata)
-#library(formatR)
-library(RGeostats)
 library(RColorBrewer)
 library(raster)
-library(Hmisc)
 library(ggridges)
+library(Hmisc)
 
-# Set dir.
-#setwd('P:/OFPEMA/WCPFC/SC19/Ecosystem Indicators/Catch and distribution')
-data_wd <- './2025_analyses/data/'
-results_wd <- "./2025_analyses/results/"
+# Directories
+data_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/data/'
+results_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/results/'
 
-# Set up mapping theme
-#newmap = fortify(maps::map(wrap=c(0,360), plot=FALSE, fill=TRUE))
+# base map
 map_bg <- map_data("world") #|>
 #coord_map(projection = 'mercator') 
 map_bg2 <- map_bg |>
   dplyr::mutate(long = long + 360, group = group + max(group) + 1) |>
   rbind(map_bg)
 
-# Plot theme
+# Plotting theme
 gg.theme <- theme_bw() + 
   theme(axis.line = element_line(color="black"),
         panel.grid.major = element_blank(),
@@ -39,7 +45,6 @@ gg.theme <- theme_bw() +
         legend.background = element_blank(),
         panel.background = element_rect(fill = NA, color = "black")) 
 
-# WCPFC area
 # Read in WCPFC-CA boundary info
 wcp_ca = read.csv(paste0(data_wd, "wcpfc_ca_stat_area.csv"))
 
@@ -47,28 +52,28 @@ wcp_ca = read.csv(paste0(data_wd, "wcpfc_ca_stat_area.csv"))
 wcp = Polygon(wcp_ca)
 wcp = SpatialPolygons(list(Polygons(list(wcp), ID = "CA")), 
                       proj4string=CRS("+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs"))
+
 # Check that points are in WCPFC-CA
 coords = wcp@polygons[[1]]@Polygons[[1]]@coords
 
-# Effort data ----
+# 2. Effort data ----
 # Load in cleaned PS effort data from effort_indicators_2025 script
-
-load(file = paste0(data_wd, "effort/effort_seine_clean_data.Rdata"))
+load(file = paste0(data_wd, "effort/effort_LL_clean_data_2024.Rdata"))
 
 s_eff3 <- 
   s_eff3 |>
   mutate(ym = paste0(YY, str_pad(MM, width = 2, side = "left", pad = "0")))
 
-# Enviro data ----
+# 3. Enviro data ----
 # Load in enviro data to extract values to
 #loc <- "C:/Users/nickh/OneDrive - SPC/easifish/Dat/ExplanatoryVars/nh2/stacked/month"
+# On NH's personal drive currently
 
 mth_dates <- unique(s_eff3$ym) |> sort() |> str_remove('-')
 
 mth_files <- data.frame(file = list.files(path="C:/Users/nickh/OneDrive - SPC/easifish/Dat/ExplanatoryVars/nh2/stacked/month", 
                         recursive = T, full.names = T)) |>
                           mutate(ym = str_extract(file, "(?<=_)(\\d{6})(?=\\.nc)"))
-#dts <- str_extract(mth_files, "(?<=_)(\\d{6})(?=\\.nc)")
 
 PS_env_dat <- tibble()
 
@@ -99,9 +104,9 @@ for(i in 1:nrow(mth_files)) {
   
 }
 
-save(PS_env_dat, file = '2025_analyses/data/environment/PS_env_dat.Rdata')
+save(PS_env_dat, file = paste0(data_wd, 'environment/PS_env_dat.Rdata'))
 
-# Explore data ----
+# 4. Plot PS enviro data ----
 load(paste0(data_wd, 'environment/PS_env_dat.Rdata'))
 
 # Mean of each variable by year
@@ -132,7 +137,7 @@ p <-
   PS_env_dat |>
   #dplyr::filter(set_type == 'all') |>
   uncount(round(sets,0)) |>
-  dplyr::select(YY, set_type, sst) |>
+  dplyr::select(YY, set_type, sst100) |>
   pivot_longer(-c(YY, set_type), names_to = 'var', values_to = 'val') |>
   group_by(YY, set_type, var) |>
   summarise(val_mn = mean(val, na.rm=T), val_25 = quantile(val, 0.25, na.rm=T),
@@ -143,13 +148,11 @@ p <-
   geom_line() +
   geom_segment(aes(x= YY, y = val_25, yend = val_75, group = YY), col = 'black') +
   facet_wrap(~set_type, nrow = 3) +
-  labs(x = 'Variable', y = 'Value', title = 'PS - Mean SST by set type across time') +
+  labs(x = 'Variable', y = 'Value', title = 'PS - Mean SST100 by set type across time') +
   gg.theme +
-  theme(legend.position = 'none')
+  theme(legend.position = 'none', aspect.ratio = 0.5)
 p
-ggsave(p, file = paste0(results_wd, 'environment/fig_PS_sst_set_type.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
-
-
+ggsave(p, file = paste0(results_wd, 'environment/fig_PS_sst100_set_type.png'),height = 4.135, width = 5.845, units = "in", dpi = 200)
 
 # Proportion of sets in >28 degree water by year
 p <- 
@@ -299,7 +302,6 @@ p
 ggsave(p, file = paste0(results_wd, 'environment/fig_PS_env_ridges_old_2022.png'),
        height = 4.135, width = 5.845, units = "in", dpi = 200)
 
-
 # Historical 1990:2000 vs most recent years SST
 pal2 <- c( rev(brewer.pal(4, "Blues")), 'gray50')
 
@@ -322,16 +324,18 @@ p
 ggsave(p, file = paste0(results_wd, 'environment/fig_PS_env_ridges_old_recent.png'),
        height = 4.135, width = 5.845, units = "in", dpi = 200)
 
-###############################################
-# Longline data
 
-load(paste0(data_wd, "effort/effort_LL_clean_data.Rdata"))
+# 5. Longline data ----
+
+# 5.1 Load longline data ----
+# From effort_indicators2025.R script
+load(paste0(data_wd, "effort/effort_LL_clean_data_2024.Rdata"))
 
 l_eff2 <- 
   l_eff2 |>
   mutate(ym = paste0(YY, str_pad(MM, width = 2, side = "left", pad = "0")))
 
-# Enviro data ----
+# 5.2 Extract enviro to LL data ----
 # Load in enviro data to extract values to
 #loc <- "C:/Users/nickh/OneDrive - SPC/easifish/Dat/ExplanatoryVars/nh2/stacked/month"
 
@@ -371,9 +375,9 @@ for(i in 1:nrow(mth_files)) {
   
 }
 
-save(LL_env_dat, file = '2025_analyses/data/environment/LL_env_dat.Rdata')
+save(LL_env_dat, file = paste0(data_wd, 'environment/LL_env_dat.Rdata'))
 
-# Explore data ----
+# 5.3 Plot longline enviro data ----
 load(paste0(data_wd, 'environment/LL_env_dat.Rdata'))
 
 # Mean of each variable by year
@@ -452,6 +456,7 @@ ggsave(p, file = paste0(results_wd, 'environment/fig_LL_sst100_props_yr.png'),
 p <- 
 LL_env_dat |>
   mutate(hhooks = round(hhooks, 0)) |>
+  dplyr::filter(!is.na(hhooks)) |>
   # Calculate weighted density for each year and variable
   group_by(YY) |>
   do({
@@ -477,6 +482,7 @@ pal1 <- brewer.pal(length(vars), "Set1")
 
 # Calculate density with weights and percentage density for each group
 density_data <- LL_env_dat |>
+  dplyr::filter(!is.na(hhooks)) |>
   dplyr::filter((YY >= 1990 & YY <= 2000) | YY == max(YY)) |>
   dplyr::select(YY, hhooks, sst, sst100, chl, ssha, o2, o2100) |>
   pivot_longer(cols = -c(hhooks, YY), names_to = 'var', values_to = 'value') |>
@@ -513,6 +519,7 @@ pal2 <- c( rev(brewer.pal(4, "Blues")), 'gray50')
 
 p <- 
 LL_env_dat |>
+  dplyr::filter(!is.na(hhooks)) |>
   dplyr::filter((YY >= 1990 & YY <= 2000) | YY %in% c(2019,2020,2021,2022)) |>
   mutate(yr_bin = ifelse(YY %in% 1990:2000, '1990-2000', as.character(YY)),
          yr_bin = factor(yr_bin, levels = c('2022', '2021', '2020', '2019', '1990-2000'))) |>

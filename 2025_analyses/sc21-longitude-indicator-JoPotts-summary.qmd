@@ -25,9 +25,11 @@ library(tidyverse)
 ```{r}
 #| label: import-data
 
-data_wd <- 'Data/'
+#data_wd <- 'Data/'
+data_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/data/'
+results_wd <- 'P:/OFPEMA/WCPFC/SC21/Ecosystem_indicators/2025_analyses/results/'
 
-load(paste0(data_wd, "/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
+load(paste0(data_wd, "long_deviance/PS_SBEST1_uncounted_1990-2023_clean_data2.Rdata"))
 
 df <- sbest_dat3 %>%
   mutate(yyF = as.factor(as.character(yy)))
@@ -38,7 +40,7 @@ df <- sbest_dat3 %>%
 
 Broadly taken from Nick's report:
 
-Tuna purse seine data, aggregated monthly by flag and set type, were extracted for the period 1990–2023 and constrained to the area between 15° S and 10° N latitude, and east of 130°E longitude.
+Tuna purse seine data, aggregated monthly by flag and set type, were extracted for the period 1990--2023 and constrained to the area between 15° S and 10° N latitude, and east of 130°E longitude.
 
 Many flags had poor temporal coverage over the time period, so this analysis focused on 10 flags that were surveyed, more or less, every year. The retained flags were `r sort(unique(df$flag))` (see @fig-long-by-year).
 
@@ -398,15 +400,13 @@ ggarrange(p1, p2)
 
 ```
 
-
 ## Residuals of mod
 
-Model residuals in general are tolerable, but: 
+Model residuals in general are tolerable, but:
 
 (1) Residuals on the response scale (i.e., longitude) showed deviations of up to ±30° (@fig-resids1-yyF), indicating substantial prediction error for some observations. While deviance residuals suggested the model was statistically consistent with the assumed error distribution (@fig-resids2-yyF), the magnitude of raw residuals highlights considerable uncertainty in spatial predictions and potential limitations in model structure or data coverage
 
-(2) spatially they are not great (see @fig-resids-spatial) suggesting consistent under prediction of longitude in the west and over prediction of longitude in the east. Despite the spatial variables modelled here, it seems there is unaccounted spatial pattern in the data that flag and longitude are not accounting for. 
-
+(2) spatially they are not great (see @fig-resids-spatial) suggesting consistent under prediction of longitude in the west and over prediction of longitude in the east. Despite the spatial variables modelled here, it seems there is unaccounted spatial pattern in the data that flag and longitude are not accounting for.
 
 ```{r}
 #| label: fig-resids1-yyF
@@ -421,7 +421,6 @@ ggplot(df, aes(x = yyF, y = resids)) +
     labs(x = "Year", y = "Residuals") + theme(axis.text.x = element_text(angle=45, size=7))
 ```
 
-
 ```{r}
 #| label: fig-resids2-yyF
 #| fig-cap: "Magnitude of deviance residuals across year."
@@ -435,15 +434,14 @@ ggplot(df, aes(x = yyF, y = resids_scale)) +
 
 ```
 
-
-
 ```{r}
 #| label: fig-resids-spatial
 #| fig-cap: "Residuals of 'best' model plotted spatially by year. Consistent pattern of under (blue shaded squares) and over prediction (red shaded squares) in west and east, respectively."
-
+df$preds = fitted(mod_syearflag.sharedsmooth, type='response')
+df$resids = df$lond - df$preds
 
 # on scale of the repsonse variable
-ggplot(df, aes(x = lond, y = latd, fill = resids)) +
+ggplot(df, aes(x = lond, y = latd, fill = resids_scale)) +
   geom_tile() +
   scale_fill_gradient2(
     low = "blue", mid = "white", high = "red",
@@ -458,5 +456,3 @@ ggplot(df, aes(x = lond, y = latd, fill = resids)) +
 
 
 ```
-
-
